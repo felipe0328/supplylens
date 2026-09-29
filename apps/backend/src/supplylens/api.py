@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from supplylens.v1.routes import router as v1_router
+from supplylens.routes.v1.routes import router as v1_router
 
 app = FastAPI(title="SupplyLens")
 
