@@ -3,4 +3,4 @@
 GET {{baseUrl}}/health
 
 ###
-GET {{baseUrl}}/v1/health/ready
+GET {{baseUrl}}/api/v1/health/ready
