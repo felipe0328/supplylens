@@ -2,9 +2,9 @@ services:
   db:
     image: pgvector/pgvector:0.8.6-pg17-bookworm
     environment:
+      POSTGRES_DB: supplylens
       POSTGRES_USER: supplylens
-      POSTGRES_PASSWORD: supplylens
-      POSTGRES_DB: localdev
+      POSTGRES_PASSWORD: localdev
     ports:
       - "127.0.0.1:5433:5432"
     volumes:
@@ -14,6 +14,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 30s
 
 volumes:
   postgres_data:
