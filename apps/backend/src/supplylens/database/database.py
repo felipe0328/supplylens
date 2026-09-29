@@ -1,6 +1,6 @@
 import os
 from typing import Generator
-from sqlalchemy import create_engine, Engine
+from sqlalchemy import create_engine, Engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
 from dotenv import load_dotenv
 
@@ -23,7 +23,7 @@ def get_session() -> Generator[Session, None, None]:
 def health_check() -> bool:
     try:
         with engine.connect() as connection:
-            connection.execute("SELECT 1")
+            connection.execute(text("SELECT 1"))
         return True
     except Exception:
         return False
