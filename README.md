@@ -128,6 +128,21 @@ SupplyLens is at the **repository skeleton** stage.
 - Node.js with npm
 - Docker with Compose
 
+### Backend configuration
+
+The API reads `DATABASE_URL` from `apps/backend/.env`. Copy the example file there before starting the backend:
+
+```powershell
+# From the repository root
+Copy-Item apps/backend/.env.example apps/backend/.env
+```
+
+The example URL is configured for the local database in `compose.yaml`:
+`postgresql+psycopg://supplylens:localdev@127.0.0.1:5433/supplylens`.
+For another database, replace it with a SQLAlchemy PostgreSQL URL in the form
+`postgresql+psycopg://<username>:<password>@<host>:<port>/<database>`.
+Keep credentials private and do not commit your `.env` file.
+
 ```bash
 # Database
 docker compose up -d db

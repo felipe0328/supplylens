@@ -1,4 +1,4 @@
-from supplylens.database.database import Base, DATABASE_URL
+from supplylens.database.database import Base, get_database_url
 from supplylens import models  # noqa: F401
 from logging.config import fileConfig
 
@@ -77,7 +77,7 @@ def run_migrations_online() -> None:
 # Configuration to make alembic work
 config = context.config
 
-url_str = DATABASE_URL.replace("%", "%%")  # Escape % for config
+url_str = get_database_url().replace("%", "%%")  # Escape % for config
 config.set_main_option("sqlalchemy.url", url_str)
 
 if config.config_file_name is not None:
