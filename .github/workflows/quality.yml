@@ -15,24 +15,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: Changed files and coverage
+  changes:
+    name: Detect changed files
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: pgvector/pgvector:0.8.6-pg17-bookworm
-        env:
-          POSTGRES_DB: supplylens_test
-          POSTGRES_USER: supplylens
-          POSTGRES_PASSWORD: localdev
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U supplylens -d supplylens_test"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 15
+    outputs:
+      all_files: ${{ steps.detect.outputs.all_files }}
+      base_sha: ${{ steps.detect.outputs.base_sha }}
+      head_sha: ${{ steps.detect.outputs.head_sha }}
+      backend: ${{ steps.detect.outputs.backend }}
+      web: ${{ steps.detect.outputs.web }}
+      version: ${{ steps.detect.outputs.version }}
 
     steps:
       - name: Check out repository
@@ -42,7 +34,7 @@ jobs:
           persist-credentials: false
 
       - name: Find changed files
-        id: changes
+        id: detect
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -87,16 +79,36 @@ jobs:
             web=true
           fi
 
+          version=false
+          if grep -Eq \
+            '^(\.github/scripts/|\.github/workflows/version-bump\.yml$|VERSION$)' \
+            <<<"$changed_files"; then
+            version=true
+          fi
+
           {
             echo "all_files=$all_files"
             echo "base_sha=$base_sha"
             echo "head_sha=$HEAD_SHA"
             echo "backend=$backend"
             echo "web=$web"
+            echo "version=$version"
           } >>"$GITHUB_OUTPUT"
 
           echo "Changed files:"
           printf '%s\n' "$changed_files"
+
+  checks:
+    name: Lint and frontend checks
+    needs: changes
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
@@ -105,12 +117,16 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/backend/uv.lock
 
-      - name: Sync backend dependencies
-        if: steps.changes.outputs.backend == 'true'
-        run: uv sync --project apps/backend --locked
+      - name: Cache pre-commit environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-
 
       - name: Set up Node.js
-        if: steps.changes.outputs.web == 'true'
+        if: needs.changes.outputs.web == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -118,15 +134,15 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
 
       - name: Install frontend dependencies
-        if: steps.changes.outputs.web == 'true'
+        if: needs.changes.outputs.web == 'true'
         run: npm ci --prefix apps/web
 
       - name: Run pre-commit on changed files
         env:
-          ALL_FILES: ${{ steps.changes.outputs.all_files }}
-          BASE_SHA: ${{ steps.changes.outputs.base_sha }}
-          HEAD_SHA: ${{ steps.changes.outputs.head_sha }}
-          SKIP: backend-tests-coverage,web-unit-tests
+          ALL_FILES: ${{ needs.changes.outputs.all_files }}
+          BASE_SHA: ${{ needs.changes.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.changes.outputs.head_sha }}
+          SKIP: backend-tests-coverage,web-unit-tests,version-script-tests
         shell: bash
         run: |
           set -euo pipefail
@@ -140,10 +156,52 @@ jobs:
           fi
 
       - name: Test version automation
+        if: needs.changes.outputs.version == 'true'
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
 
+      - name: Enforce frontend coverage thresholds
+        if: needs.changes.outputs.web == 'true'
+        working-directory: apps/web
+        run: npm run test:coverage
+
+  backend:
+    name: Backend tests and migrations
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg17-bookworm
+        env:
+          POSTGRES_DB: supplylens_test
+          POSTGRES_USER: supplylens
+          POSTGRES_PASSWORD: localdev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U supplylens -d supplylens_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: latest-known
+          enable-cache: true
+          cache-dependency-glob: apps/backend/uv.lock
+
+      - name: Sync backend dependencies
+        run: uv sync --project apps/backend --locked
+
       - name: Enforce backend coverage threshold
-        if: steps.changes.outputs.backend == 'true'
         working-directory: apps/backend
         run: >-
           uv run pytest
@@ -153,13 +211,34 @@ jobs:
           --cov-fail-under=100
 
       - name: Test migrations on clean PostgreSQL
-        if: steps.changes.outputs.backend == 'true'
         working-directory: apps/backend
         env:
           TEST_DATABASE_URL: postgresql+psycopg://supplylens:localdev@127.0.0.1:5432/supplylens_test
         run: uv run pytest -m integration tests/integration
 
-      - name: Enforce frontend coverage thresholds
-        if: steps.changes.outputs.web == 'true'
-        working-directory: apps/web
-        run: npm run test:coverage
+  quality:
+    name: Changed files and coverage
+    if: always()
+    needs: [changes, checks, backend]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Require all applicable checks to pass
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            echo "Changed-file detection did not succeed."
+            exit 1
+          fi
+          if [[ "$CHECKS_RESULT" != "success" ]]; then
+            echo "Lint or frontend checks did not succeed."
+            exit 1
+          fi
+          if [[ "$BACKEND_RESULT" != "success" && "$BACKEND_RESULT" != "skipped" ]]; then
+            echo "Backend checks did not succeed."
+            exit 1
+          fi
