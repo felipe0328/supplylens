@@ -1,7 +1,7 @@
 # SupplyLens — Document Upload, Object Storage, and Processing Architecture
 
-**Status:** Proposed MVP architecture  
-**Last reviewed:** 2026-09-29  
+**Status:** Proposed MVP architecture
+**Last reviewed:** 2026-09-29
 **Scope:** React frontend → direct object-storage upload → FastAPI metadata/lifecycle API → PostgreSQL → asynchronous PDF processing → structured data + document chunks/embeddings.
 
 ---
@@ -896,7 +896,7 @@ React                       FastAPI                    PostgreSQL               
   │ document_id + upload URL   │◄──────────────────────────────────────────────────────┘
   │◄───────────────────────────┤
   │                            │
-  │ PUT PDF directly                                                              
+  │ PUT PDF directly
   ├──────────────────────────────────────────────────────────────────────────────────►│
   │                                                                                   │
   │ 200 OK / ETag                                                                     │
@@ -2150,20 +2150,20 @@ These should be treated as current SupplyLens architecture decisions unless requ
 
 Cloudflare R2:
 
-- S3 API overview:  
+- S3 API overview:
   https://developers.cloudflare.com/r2/api/s3/
-- S3 compatibility:  
+- S3 compatibility:
   https://developers.cloudflare.com/r2/api/s3/api/
-- Presigned URLs:  
+- Presigned URLs:
   https://developers.cloudflare.com/r2/api/s3/presigned-urls/
-- Pricing:  
+- Pricing:
   https://developers.cloudflare.com/r2/pricing/
 
 MinIO:
 
-- Container documentation:  
+- Container documentation:
   https://min.io/docs/minio/container/index.html
-- Single-node container deployment:  
+- Single-node container deployment:
   https://min.io/docs/minio/container/operations/install-deploy-manage/deploy-minio-single-node-single-drive.html
 
 ---
