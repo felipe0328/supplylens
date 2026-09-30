@@ -15,8 +15,6 @@ The machine-readable expectations are in [`expected.json`](expected.json). Money
 | `05_sales_order_before_change.pdf` | Original order for a reconciliation case. |
 | `06_invoice_changed_quantity_fee.pdf` | Later invoice has fewer units and a new handling fee; linking must flag differences before revising the case. |
 | `07_multipage_repeated_header.pdf` | Sixteen product lines across two pages, repeated header, total only on page 2. Every line has the correct source page. |
-| `08_scanned_invoice_image_only.pdf` | One raster page with **zero embedded text**. Local OCR should recover its reference, product name, and total. |
-| `09_mixed_digital_scanned_pages.pdf` | Page 1 has digital text; page 2 is image-only. OCR is needed for one page, with a single document total. |
 | `10_order_discount_and_shared_fees.pdf` | Product subtotal 100.00, separate -10.00 discount, 5.00 service fee, 7.50 freight, total 102.50. Do not apply a discount twice. |
 | `11_case_pack_sellable_units_weight.pdf` | Two cases at six sellable boxes per case; distinguish purchased units (2) from sellable units (12), and weight per purchase unit. |
 | `12_spanish_eur_missing_weight.pdf` | Spanish headings, EUR, printed decimal comma, no weight. Keep currency distinct from USD and leave weight unknown. |
@@ -27,21 +25,21 @@ Related groups in `expected.json` identify 03–04 and 05–06. Do not merge doc
 
 ## How to use them in backend tests
 
-1. Load `expected.json`, open each `file` relative to this directory, and verify PDF page count and mode. An image-only page must be routed through OCR; a digital page should retain page references.
-2. Compare extracted supplier, reference, date, currency, row roles, quantities, decimal amounts, and page numbers to the expected fields. Allow OCR's whitespace and punctuation to vary; use `ocr_assertions` for essential words and values.
+1. Load `expected.json`, open each `file` relative to this directory, and verify PDF page count and digital mode while retaining page references.
+2. Compare extracted supplier, reference, date, currency, row roles, quantities, decimal amounts, and page numbers to the expected fields.
 3. Test the review workflow separately. Extraction values remain suggestions until a user confirms them. The system must permit missing fields and human corrections without inventing data.
 4. For 03–04 and 05–06, exercise document linking and reconciliation. Verify one purchase-case aggregate per linked group, explicit status, no automatic overwrite, and immutable prior revisions.
 5. Run reports across USD and EUR cases. Group by currency or require an explicit conversion; never add raw amounts across currencies. No fixture represents payment, inventory, or sales.
 6. Run the entire upload → draft → review → report path with no LLM credentials. These PDFs require no external AI service.
 
-Do not require a general parser to handle every deliberately difficult document from the first milestone. Use the fixture map to grow capability, record which documents need manual review, and measure whether later OCR, layout rules, or optional AI reduce correction effort.
+Do not require a general parser to handle every deliberately difficult document from the first milestone. Use the fixture map to grow capability, record which documents need manual review, and measure whether later layout rules or optional AI reduce correction effort.
 
 ## Regeneration and maintenance
 
-The checked-in PDFs are ready to use. To regenerate them, install `reportlab`, `Pillow`, and `pypdf` in a separate fixture tooling environment and install Poppler (`pdftoppm`) for the image-only pages. Run:
+The checked-in PDFs are ready to use. To regenerate them, install `reportlab` in a separate fixture tooling environment. Run:
 
 ```bash
 python fixtures/generate_mock_pdfs.py
 ```
 
-The generator rewrites all PDFs and `expected.json`. Inspect changed renders and OCR output before accepting a regenerated fixture. Do not add authentic supplier PDFs, real addresses, emails, customer IDs, business data, or private price formulas to this directory.
+The generator rewrites all PDFs and `expected.json`. Inspect changed renders before accepting a regenerated fixture. Do not add authentic supplier PDFs, real addresses, emails, customer IDs, business data, or private price formulas to this directory.

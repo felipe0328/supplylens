@@ -3,8 +3,7 @@
   "notes": [
     "All supplier names, codes, references, dates, and amounts are invented.",
     "Business status is a review hint, never inferred solely from a document type.",
-    "Amounts are decimal strings; charges and discounts are separate from sellable products.",
-    "OCR output varies by engine; assert key terms and page behavior, not exact whitespace."
+    "Amounts are decimal strings; charges and discounts are separate from sellable products."
   ],
   "documents": [
     {
@@ -44,8 +43,7 @@
       ],
       "printed_products_subtotal": "69.50",
       "printed_document_total": "69.50",
-      "expected_warnings": [],
-      "ocr_assertions": []
+      "expected_warnings": []
     },
     {
       "file": "pdfs/02_invoice_handling_and_msrp.pdf",
@@ -97,8 +95,7 @@
       "printed_document_total": "123.05",
       "expected_warnings": [
         "CHARGE_ROW_NOT_PRODUCT"
-      ],
-      "ocr_assertions": []
+      ]
     },
     {
       "file": "pdfs/03_preorder_original.pdf",
@@ -142,8 +139,7 @@
       "printed_document_total": "128.00",
       "expected_warnings": [
         "PREORDER_NOT_RECORDED_PURCHASE"
-      ],
-      "ocr_assertions": []
+      ]
     },
     {
       "file": "pdfs/04_invoice_matches_preorder.pdf",
@@ -185,8 +181,7 @@
       ],
       "printed_products_subtotal": "128.00",
       "printed_document_total": "128.00",
-      "expected_warnings": [],
-      "ocr_assertions": []
+      "expected_warnings": []
     },
     {
       "file": "pdfs/05_sales_order_before_change.pdf",
@@ -225,8 +220,7 @@
       ],
       "printed_products_subtotal": "132.00",
       "printed_document_total": "132.00",
-      "expected_warnings": [],
-      "ocr_assertions": []
+      "expected_warnings": []
     },
     {
       "file": "pdfs/06_invoice_changed_quantity_fee.pdf",
@@ -276,8 +270,7 @@
       "printed_document_total": "122.00",
       "expected_warnings": [
         "RELATED_DOCUMENT_DIFFERENCE"
-      ],
-      "ocr_assertions": []
+      ]
     },
     {
       "file": "pdfs/07_multipage_repeated_header.pdf",
@@ -442,100 +435,7 @@
       ],
       "printed_products_subtotal": "154.00",
       "printed_document_total": "154.00",
-      "expected_warnings": [],
-      "ocr_assertions": []
-    },
-    {
-      "file": "pdfs/08_scanned_invoice_image_only.pdf",
-      "scenario": "scan_requires_ocr",
-      "mode": "scanned",
-      "pages": 1,
-      "supplier": "Birch Hobby Co",
-      "document_type": "invoice",
-      "reference": "BHC-222",
-      "linked_reference": null,
-      "date": "2026-06-11",
-      "currency": "USD",
-      "display_decimal_separator": ".",
-      "business_status_hint": "purchase_recorded",
-      "related_group": null,
-      "relationship": null,
-      "rows": [
-        {
-          "role": "product",
-          "sku": "MINI-11",
-          "description": "Miniature Paint Set",
-          "quantity": "2",
-          "unit_price": "11.50",
-          "line_total": "23.00",
-          "page": 1
-        },
-        {
-          "role": "product",
-          "sku": "BRSH-27",
-          "description": "Fine Brush Kit",
-          "quantity": "1",
-          "unit_price": "27.00",
-          "line_total": "27.00",
-          "page": 1
-        }
-      ],
-      "printed_products_subtotal": "50.00",
-      "printed_document_total": "50.00",
-      "expected_warnings": [
-        "OCR_REQUIRED"
-      ],
-      "ocr_assertions": [
-        "BHC-222",
-        "Miniature Paint Set",
-        "50.00"
-      ]
-    },
-    {
-      "file": "pdfs/09_mixed_digital_scanned_pages.pdf",
-      "scenario": "per_page_ocr",
-      "mode": "mixed",
-      "pages": 2,
-      "supplier": "Pinecrest Play Goods",
-      "document_type": "invoice",
-      "reference": "PPG-430",
-      "linked_reference": null,
-      "date": "2026-06-18",
-      "currency": "USD",
-      "display_decimal_separator": ".",
-      "business_status_hint": "purchase_recorded",
-      "related_group": null,
-      "relationship": null,
-      "rows": [
-        {
-          "role": "product",
-          "sku": "KIT-15",
-          "description": "Starter Kit",
-          "quantity": "1",
-          "unit_price": "15.00",
-          "line_total": "15.00",
-          "page": 1
-        },
-        {
-          "role": "product",
-          "sku": "SLEEVE-8",
-          "description": "Premium Sleeves",
-          "quantity": "2",
-          "unit_price": "8.00",
-          "line_total": "16.00",
-          "page": 2
-        }
-      ],
-      "printed_products_subtotal": "31.00",
-      "printed_document_total": "31.00",
-      "expected_warnings": [
-        "PAGE_2_OCR_REQUIRED"
-      ],
-      "ocr_assertions": [
-        "PPG-430",
-        "Premium Sleeves",
-        "31.00"
-      ]
+      "expected_warnings": []
     },
     {
       "file": "pdfs/10_order_discount_and_shared_fees.pdf",
@@ -601,8 +501,7 @@
       ],
       "printed_products_subtotal": "100.00",
       "printed_document_total": "102.50",
-      "expected_warnings": [],
-      "ocr_assertions": []
+      "expected_warnings": []
     },
     {
       "file": "pdfs/11_case_pack_sellable_units_weight.pdf",
@@ -646,8 +545,7 @@
       ],
       "printed_products_subtotal": "200.00",
       "printed_document_total": "200.00",
-      "expected_warnings": [],
-      "ocr_assertions": []
+      "expected_warnings": []
     },
     {
       "file": "pdfs/12_spanish_eur_missing_weight.pdf",
@@ -688,8 +586,7 @@
       "printed_document_total": "33.50",
       "expected_warnings": [
         "WEIGHT_MISSING"
-      ],
-      "ocr_assertions": []
+      ]
     },
     {
       "file": "pdfs/13_ambiguous_currency.pdf",
@@ -722,8 +619,7 @@
       "expected_warnings": [
         "CURRENCY_MISSING",
         "WEIGHT_MISSING"
-      ],
-      "ocr_assertions": []
+      ]
     },
     {
       "file": "pdfs/14_incorrect_line_and_document_total.pdf",
@@ -756,8 +652,7 @@
       "expected_warnings": [
         "LINE_TOTAL_MISMATCH",
         "DOCUMENT_TOTAL_MISMATCH"
-      ],
-      "ocr_assertions": []
+      ]
     }
   ]
 }

@@ -8,9 +8,35 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "alembic>=1.20.0",
     "fastapi>=0.141.1",
+    "psycopg[binary]>=3.3.6",
+    "python-dotenv>=1.2.3",
+    "sqlalchemy>=2.1.1",
     "uvicorn>=0.54.0",
 ]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.0.0",
+    "pytest>=8.3.5",
+    "pytest-cov>=6.1.1",
+    "ruff==0.16.9",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: tests that require the disposable PostgreSQL test database",
+]
+python_files = ["test_*.py"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+extend-exclude = ["alembic/versions/**"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
 
 [build-system]
 requires = ["uv_build>=0.12.20,<0.13.0"]

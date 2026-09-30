@@ -1,0 +1,53 @@
+exclude: ^apps/backend/alembic/versions/
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: \.py$
+      - id: ruff-format
+        files: \.py$
+
+  - repo: local
+    hooks:
+      - id: web-eslint
+        name: ESLint (changed web files)
+        entry: npm --prefix apps/web exec -- eslint
+        language: system
+        files: ^apps/web/.*\.(ts|tsx)$
+        types: [file]
+      - id: web-typecheck
+        name: TypeScript typecheck
+        entry: npm --prefix apps/web run typecheck
+        language: system
+        files: ^apps/web/.*\.(ts|tsx)$
+        pass_filenames: false
+      - id: web-unit-tests
+        name: Frontend unit tests and coverage
+        entry: npm --prefix apps/web run test:coverage
+        language: system
+        files: ^apps/web/src/.*\.(ts|tsx)$
+        pass_filenames: false
+      - id: backend-tests-coverage
+        name: Backend unit tests and coverage
+        entry: uv run --project apps/backend python scripts/check_coverage.py
+        language: system
+        files: ^apps/backend/(src|tests)/.*\.py$
+        pass_filenames: false
+        verbose: true
+      - id: version-script-tests
+        name: Version automation tests
+        entry: python -m unittest discover -s .github/scripts -p test_*.py
+        language: system
+        files: ^(.github/scripts/|.github/workflows/version-bump\.yml$|VERSION$)
+        pass_filenames: false

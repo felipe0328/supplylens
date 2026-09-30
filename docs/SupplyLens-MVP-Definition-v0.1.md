@@ -1,20 +1,20 @@
 # SupplyLens — MVP Definition
 
-**Status:** Draft for review  
-**Date:** 28 September 2026  
+**Status:** Draft for review
+**Date:** 28 September 2026
 **Purpose:** Define what SupplyLens solves, what the first usable version includes, how its AI features work, and which technology we plan to use.
 
 **At a glance**
 
 - **Core workflow:** Upload a supplier PDF, review its extracted lines, organize products, apply a configurable calculation policy, and analyze confirmed purchases.
-- **PDF support:** Read digital PDFs and use local OCR for scans.
+- **PDF support:** Automatically extract digital PDFs with selectable text. Preserve image-only or scanned PDFs, mark automatic extraction as unsupported, and route them to manual review.
 - **AI boundary:** Purchase records and calculations work without an LLM. Optional AI helps with uncertain fields and natural-language answers.
 - **Questions:** Hybrid retrieval finds evidence in documents; verified purchase metrics come from the database.
 - **First release:** Purchases only. Payment, stock, inventory, sales, and demand forecasting come later.
 
 ## 1. The idea in one paragraph
 
-SupplyLens helps a small retailer turn supplier purchase PDFs into trustworthy purchase and product information. It reads digital PDFs and scanned PDFs, suggests the details it found, asks a person to correct and confirm them, and then shows purchase history and trends.
+SupplyLens helps a small retailer turn supplier purchase PDFs into trustworthy purchase and product information. It reads digital PDFs with selectable text, suggests the details it found, asks a person to correct and confirm them, and then shows purchase history and trends. Image-only or scanned PDFs remain available for manual review and entry.
 
 It can also estimate costs and selling prices using a policy configured by that business. A user can search a supplier document, ask a cited question about it, or ask a question about the confirmed purchase data.
 
@@ -24,7 +24,7 @@ Mulligan Store is the first real use case. SupplyLens itself is a business-neutr
 
 ## 2. The problem
 
-A retailer can receive a supplier order, an invoice, and other PDFs for the same purchase. A person then has to identify products, quantities, supplier codes, unit prices, fees, and sometimes weight. The supplier's name for an item may differ from the store's product name. A scanned document may have no selectable text. Copying this information into a spreadsheet takes time, and repeated purchases are hard to compare.
+A retailer can receive a supplier order, an invoice, and other PDFs for the same purchase. A person then has to identify products, quantities, supplier codes, unit prices, fees, and sometimes weight. The supplier's name for an item may differ from the store's product name. An image-only or scanned document may have no selectable text and therefore requires manual entry in the MVP. Copying this information into a spreadsheet takes time, and repeated purchases are hard to compare.
 
 Even after the information is entered, common questions remain difficult:
 
@@ -45,7 +45,7 @@ The MVP is a single-business application with private access. It does not need t
 
 Consider a supplier sales order with several product lines. The user uploads the PDF. SupplyLens stores the original privately and creates a processing job.
 
-1. A PDF library reads text, tables, and page locations when the PDF contains selectable text. For pages that are scans, a local OCR tool adds a searchable text layer before the same extraction process continues.
+1. A PDF library reads text, tables, and page locations when the PDF contains selectable text. If the document is image-only or scanned, SupplyLens preserves the original, marks automatic extraction as unsupported, and sends it to manual review.
 2. A parser suggests the document type, supplier, reference number, date, currency, lines, quantities, prices, fees, and other fields that are present. It keeps the source page for each suggestion.
 3. Validation checks the shape of the data and arithmetic that the document allows. For example, it can compare a line's quantity multiplied by unit price with the displayed line total. A mismatch is shown to the user; it is not silently corrected.
 4. If the business has enabled LLM assistance, SupplyLens can send a limited, relevant text excerpt for a difficult field and show an additional suggestion. This suggestion does not overwrite a confirmed value.
@@ -53,20 +53,20 @@ Consider a supplier sales order with several product lines. The user uploads the
 6. A selected calculation policy produces clearly labeled estimates. Reports then summarize the confirmed purchase information.
 7. The user can ask about the document and receive source passages or, with an LLM enabled, a short answer with document and page citations. They can also ask about purchase metrics, which are computed from confirmed records.
 
-If OCR, a parser, or an AI service cannot identify a field, the user can enter it manually and complete the workflow.
+If a parser or an AI service cannot identify a field, or automatic extraction is unsupported for the document, the user can enter it manually and complete the workflow.
 
 ## 5. MVP features
 
 ### 5.1 Documents and extraction
 
-- Upload supplier invoices and supplier order documents as PDFs. Both PDFs with selectable text and scanned PDFs are in scope.
+- Upload supplier invoices and supplier order documents as PDFs. Automatic extraction supports digital PDFs with selectable text.
 - Keep the original PDF private. Show document type, supplier, reference, date, and processing status.
-- Extract text and tables with page references. Run OCR on pages that need it rather than assuming every page is a scan.
-- Treat OCR from scanned tables as a suggestion that may need more corrections than text extracted from a digital PDF.
+- Preserve image-only or scanned PDFs, mark them as unsupported for automatic extraction, and provide manual review and entry instead.
+- Extract text and tables from supported digital PDFs with page references.
 - Provide a general parser and focused supplier layout rules where those rules improve the first real documents. An unfamiliar layout may require more manual review.
 - Create an editable draft with field-level source references and validation findings.
 - Detect likely duplicate uploads. Let the user link an order and invoice for the same underlying purchase so reports do not add their totals together.
-- Record whether a confirmed value came from the document parser, OCR, an optional LLM suggestion, or a user's correction.
+- Record whether a confirmed value came from the document parser, an optional LLM suggestion, or a user's correction.
 
 ### 5.2 Product catalog
 
@@ -139,18 +139,17 @@ These choices are the initial implementation plan. Package versions will be pinn
 - **API - Python with FastAPI and Pydantic.** Define typed contracts for uploads, review, products, policies, reports, and questions, with generated API documentation.
 - **Database - PostgreSQL, SQLAlchemy, and Alembic.** Store suppliers, documents, purchases, products, policies, and jobs together, with explicit schema migrations.
 - **Document extraction - pdfplumber.** Read text, tables, and page positions from digital PDFs so the review screen can point to the source.
-- **OCR - OCRmyPDF with Tesseract.** Add a searchable text layer to scanned pages locally, then run the usual parser.
 - **Retrieval - PostgreSQL full-text search plus pgvector.** Combine exact-term search, semantic search, and document filters near the purchase data.
 - **Local embeddings - Sentence Transformers with multilingual-e5-small as the first candidate.** Create semantic vectors locally for English and Spanish text. Test its quality and resource use before locking the model.
 - **Optional generation - one LLM provider adapter, initially the OpenAI Python SDK.** Add structured extraction suggestions and cited answers only when enabled.
 - **RAG orchestration - a small LangChain integration in the optional assistant module.** Use a familiar framework while keeping search, ranking, citations, and business decisions explicit in our code.
-- **Document jobs - a Python worker sharing the backend package, with jobs stored in PostgreSQL.** Handle OCR and indexing with progress, retry, and recovery, without adding a message broker.
+- **Document jobs - a Python worker sharing the backend package, with jobs stored in PostgreSQL.** Handle digital extraction and indexing with progress, retry, and recovery, without adding a message broker.
 - **Local development - a monorepo and Docker Compose.** Keep the web app, API, worker, database, docs, and synthetic test data in one reproducible setup.
 - **Tests and delivery - pytest, frontend component tests, end-to-end workflow tests, and GitHub Actions.** Verify calculations, extraction, review, query safety, retrieval quality, and the complete upload flow.
 
 The Python API and document worker are two entry points into one modular backend, not independent microservices. The browser talks to the API over REST. It can receive document-job progress through server-sent events; the worker updates job records in PostgreSQL. PDF files live in private file storage, with local storage for development and an object-storage adapter for deployment.
 
-We will choose a hosting provider after testing the worker's OCR and local embedding memory needs, private file storage, pgvector availability, and expected costs. The local Docker setup and synthetic demo data come first. This avoids promising a free public deployment that cannot run the chosen document pipeline.
+We will choose a hosting provider after testing the worker's digital extraction and local embedding memory needs, private file storage, pgvector availability, and expected costs. The local Docker setup and synthetic demo data come first. This avoids promising a free public deployment that cannot run the chosen document pipeline.
 
 ### How this demonstrates the target role
 
@@ -159,7 +158,7 @@ The project is also a learning and portfolio project for the Truelogic Lead Full
 - **Python backend and API design:** Typed FastAPI endpoints, a document worker, clear domain modules, and documented API contracts.
 - **React and TypeScript:** A usable PDF review flow, product and policy screens, reports, and a cited question interface.
 - **LLM integration and RAG:** Optional structured extraction suggestions, two-step hybrid retrieval, source citations, and evaluation against simpler baselines.
-- **Data pipelines and databases:** Recoverable document jobs, OCR, validation, PostgreSQL records, and a vector index.
+- **Data pipelines and databases:** Recoverable digital-document jobs, validation, PostgreSQL records, and a vector index.
 - **Real-time interfaces and engineering quality:** Processing progress, automated tests, CI, containerized local setup, and measured extraction and retrieval quality.
 - **Technical direction:** Short architecture decision records explaining the chosen scope, no-LLM fallback, RAG pattern, and tradeoffs found during implementation.
 
@@ -172,19 +171,18 @@ This project can demonstrate hands-on decisions and code. Career history and lea
 - LLM assistance is off by default. The business explicitly enables it and configures a provider credential.
 - When possible, only relevant extracted text excerpts are sent to the provider, not entire PDFs. The interface makes the use of external processing visible.
 - Original documents, extracted drafts, confirmed fields, user corrections, policy versions, and derived estimates remain distinguishable.
-- Upload and processing failures retain a useful status and allow correction or retry. An OCR failure does not erase the original PDF.
+- Upload and processing failures retain a useful status and allow correction or retry. The original PDF remains available even when automatic extraction is unsupported or fails.
 
 ## 10. How we will verify the MVP
 
-We will prepare synthetic or anonymized purchase PDFs, including digital and scanned examples, and expected field values. This becomes a small repeatable evaluation set.
+We will prepare synthetic or anonymized digital purchase PDFs and expected field values. This becomes a small repeatable evaluation set.
 
 - **Extraction:** Compare document type, supplier, reference, quantities, prices, fees, and line totals with expected values. Measure how often the user must correct the baseline and whether optional LLM assistance reduces that effort.
-- **OCR:** Confirm scanned examples produce searchable text, preserve the correct pages, and still allow the user to repair recognition errors.
 - **Calculations:** Test policy operations, currency handling, missing inputs, rounding, policy version snapshots, and correct separation of document facts from estimates. The private Mulligan policy can have its own private acceptance examples.
 - **Reports:** Compare order and invoice summaries to confirmed records; verify linked documents do not count twice and mixed currencies are not silently added.
 - **Document Q&A:** Use expected source passages for questions about fees, terms, and product lines. Compare keyword-only, semantic-only, and hybrid retrieval; check whether cited answers are supported by the referenced page.
 - **Analytics Q&A:** Confirm each supported question maps to an allowed metric and filters, uses read-only queries, and either returns the correct value or asks for clarification.
-- **No-LLM path:** Run the full upload, OCR, review, policy, report, and document-search workflow without any model credentials.
+- **No-LLM path:** Run the full upload, digital extraction, review, policy, report, and document-search workflow without any model credentials.
 - **End-to-end:** From one PDF upload, reach a confirmed purchase and a supplier report through the browser.
 
 The README should publish the method and aggregate benchmark results from safe fixtures so another engineer can see what improved and what still needs review.
@@ -204,7 +202,7 @@ These can be later versions. The schema should keep purchase documents and futur
 
 ## 12. MVP completion criteria
 
-The MVP is usable when a person can upload a digital or scanned supplier PDF; review and confirm its purchase lines; link an order and invoice when needed; match products and review name/SKU suggestions; configure and apply a versioned calculation policy; see accurate purchase-only reports; search or ask cited questions about a document; and ask supported questions about the confirmed purchase data.
+The MVP is usable when a person can upload a digital supplier PDF; automatically extract, review, and confirm its purchase lines; link an order and invoice when needed; match products and review name/SKU suggestions; configure and apply a versioned calculation policy; see accurate purchase-only reports; search or ask cited questions about a document; and ask supported questions about the confirmed purchase data. An image-only or scanned PDF must be preserved, marked unsupported for automatic extraction, and available for manual review.
 
 The same core purchase workflow must succeed with LLM features switched off. The AI-enabled path should show a measurable improvement on the evaluation set and identify its cost, limitations, and failure cases.
 
@@ -212,7 +210,6 @@ The same core purchase workflow must succeed with LLM features switched off. The
 
 - [Truelogic Lead Full-Stack AI Engineer role](https://jobs.ashbyhq.com/truelogic/7b557eac-51e4-4396-ada3-483421b22fdc)
 - [pdfplumber documentation](https://github.com/jsvine/pdfplumber)
-- [OCRmyPDF introduction](https://ocrmypdf.readthedocs.io/en/latest/introduction.html)
 - [pgvector hybrid search](https://github.com/pgvector/pgvector#hybrid-search)
 - [FastAPI background tasks guidance](https://fastapi.tiangolo.com/tutorial/background-tasks/)
 - [FastAPI server-sent events](https://fastapi.tiangolo.com/tutorial/server-sent-events/)
