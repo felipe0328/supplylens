@@ -6,7 +6,7 @@
 
 **Reviewable extraction · Human validation · Deterministic calculations · Evidence-first workflows**
 
-![Version](https://img.shields.io/badge/version-v0.2.0-8b5cf6)
+![Version](https://img.shields.io/badge/version-v0.3.0-8b5cf6)
 ![Status](https://img.shields.io/badge/status-early%20scaffold-orange)
 ![Backend](https://img.shields.io/badge/backend-FastAPI-009688)
 ![Frontend](https://img.shields.io/badge/frontend-React%20%2B%20TypeScript-149eca)
