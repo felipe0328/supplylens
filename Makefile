@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help setup hooks hooks-uninstall fe fe-install fe-build fe-lint be be-install be-check check db-revision db-upgrade db-downgrade db-current db-history db-check docker-start docker-stop docker-status docker-logs
+.PHONY: help setup hooks hooks-uninstall fe fe-install fe-build fe-lint be be-install be-check be-lint be-test be-test-integration version-test check db-revision db-upgrade db-downgrade db-current db-history db-check docker-start docker-stop docker-status docker-logs docker-test-start docker-test-stop
 
 help: ## Show available commands
 	@echo "SupplyLens development commands:"
@@ -10,6 +10,10 @@ help: ## Show available commands
 	@echo "  make fe             Run the React development server"
 	@echo "  make be             Run the FastAPI development server"
 	@echo "  make be-check       Check backend Python syntax"
+	@echo "  make be-lint        Run Ruff lint and formatting checks"
+	@echo "  make be-test        Run backend tests that do not require PostgreSQL"
+	@echo "  make be-test-integration  Run migrations against the disposable test DB"
+	@echo "  make version-test   Run version automation tests"
 	@echo "  make check          Run backend and frontend checks"
 	@echo "  make db-revision MESSAGE=\"...\" Create an autogenerate migration"
 	@echo "  make db-upgrade     Apply all pending migrations"
@@ -21,6 +25,8 @@ help: ## Show available commands
 	@echo "  make docker-stop    Stop and remove Docker Compose services"
 	@echo "  make docker-status  Show Docker Compose service status"
 	@echo "  make docker-logs    Follow Docker Compose logs"
+	@echo "  make docker-test-start  Start the disposable PostgreSQL test database"
+	@echo "  make docker-test-stop   Remove the disposable PostgreSQL test database"
 
 hooks: ## Install the repository quality gate as a pre-push hook
 	pre-commit install --hook-type pre-push
@@ -46,12 +52,25 @@ be: ## Run the FastAPI development server with reload enabled
 	cd apps/backend && uv run uvicorn supplylens.api:app --reload
 
 be-install: ## Sync the locked Python environment
-	cd apps/backend && uv sync
+	cd apps/backend && uv sync --locked
 
 be-check: ## Check backend Python syntax
 	cd apps/backend && uv run python -m compileall -q src
 
-check: be-check fe-lint fe-build ## Run backend and frontend checks
+be-lint: ## Run backend lint and formatting checks
+	cd apps/backend && uv run ruff check .
+	cd apps/backend && uv run ruff format --check .
+
+be-test: ## Run backend tests that do not require PostgreSQL
+	uv run --project apps/backend python scripts/check_coverage.py
+
+be-test-integration: docker-test-start ## Test migrations against disposable PostgreSQL
+	cd apps/backend && uv run pytest -m integration tests/integration
+
+version-test: ## Run version automation tests
+	python -m unittest discover -s .github/scripts -p "test_*.py"
+
+check: be-check be-lint be-test version-test fe-lint fe-build ## Run backend and frontend checks
 
 db-revision: ## Create an autogenerate migration (use MESSAGE="...")
 	$(if $(strip $(MESSAGE)),,$(error Usage: make db-revision MESSAGE="Add users table"))
@@ -83,3 +102,9 @@ docker-status: ## Show Docker Compose service status
 
 docker-logs: ## Follow Docker Compose logs (Ctrl+C to exit)
 	docker compose logs --follow
+
+docker-test-start: ## Start the disposable PostgreSQL test database
+	docker compose --profile test up -d --wait db-test
+
+docker-test-stop: ## Remove the disposable PostgreSQL test database
+	docker compose --profile test rm --stop --force --volumes db-test

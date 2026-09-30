@@ -1,3 +1,5 @@
+exclude: ^apps/backend/alembic/versions/
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -8,7 +10,7 @@ repos:
       - id: check-toml
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.0
+    rev: v0.16.9
     hooks:
       - id: ruff
         args: [--fix]
@@ -43,3 +45,9 @@ repos:
         files: ^apps/backend/(src|tests)/.*\.py$
         pass_filenames: false
         verbose: true
+      - id: version-script-tests
+        name: Version automation tests
+        entry: python -m unittest discover -s .github/scripts -p test_*.py
+        language: system
+        files: ^(.github/scripts/|.github/workflows/version-bump\.yml$|VERSION$)
+        pass_filenames: false

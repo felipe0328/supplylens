@@ -1,15 +1,15 @@
 # SupplyLens — MVP Architecture
 
-**Status:** Proposed implementation design  
-**Date:** 28 September 2026  
-**Audience:** The engineer building the first release  
+**Status:** Proposed implementation design
+**Date:** 28 September 2026
+**Audience:** The engineer building the first release
 **Read with:** [SupplyLens MVP Definition](SupplyLens-MVP-Definition-v0.1.md). The separate private formula guide defines Mulligan's actual calculations; this document defines how software can execute configurable policies without embedding those rules in the public repository.
 
 ## 1. The decision in one minute
 
 Build one repository containing a React web app, a Python API, and a Python document worker. The API and worker are two processes using the same modular backend code. PostgreSQL holds reviewed purchase cases, document drafts, jobs, policy versions, and search passages. Private file storage holds the original PDFs. A local storage adapter and Docker Compose make the complete product runnable on a development computer.
 
-The system works from upload through confirmation, estimates, reports, and document search without an LLM key. OCR runs locally when needed. Local embeddings improve document search when resources allow. An optional LLM only suggests uncertain fields, writes evidence-grounded answers, or maps a question to an approved metric request. It never approves a purchase or performs financial calculations.
+The system works from upload through confirmation, estimates, reports, and document search without an LLM key. Automatic extraction supports digital PDFs with selectable text. Image-only or scanned PDFs are preserved, marked unsupported for automatic extraction, and routed to manual review. Local embeddings improve document search when resources allow. An optional LLM only suggests uncertain fields, writes evidence-grounded answers, or maps a question to an approved metric request. It never approves a purchase or performs financial calculations.
 
 **The business rule that governs the model:** The first bill a user reviews and confirms as a purchase supplies the values used for that purchase, even when the supplier never issues an invoice. A later invoice or other document is linked as evidence. Matching documents do not create a second purchase or change estimates. Differences are shown for explicit review; a user can make a new purchase revision if warranted. A pre-order can instead be reviewed as a plan and used for a provisional price scenario without being counted as a recorded purchase. No document implies payment, receipt of goods, stock on hand, or a sale.
 
@@ -26,7 +26,7 @@ Keep these invariants visible in code and UI:
 3. **No inferred payment or stock:** “Confirmed purchase value” is not “cash spent”; potential selling price is not realized revenue or profit.
 4. **Money has a currency and provenance:** Never sum unlike currencies implicitly. Use decimal arithmetic, explicit rate inputs, and an explicit rounding policy.
 5. **Estimates are reproducible:** Keep the exact purchase revision, policy version, inputs, intermediate values, output, and warnings. Editing a purchase or policy produces a new estimate; it does not rewrite history.
-6. **The model cannot decide:** Parser, OCR, matching, and LLM outputs are suggestions. A user confirms the purchase, product match, and policy.
+6. **The model cannot decide:** Parser, matching, and LLM outputs are suggestions. A user confirms the purchase, product match, and policy.
 7. **Useful without AI services:** No external LLM credential is required for the complete purchase workflow or keyword document search.
 
 ## 3. System shape
@@ -45,16 +45,16 @@ flowchart TD
 | --- | --- | --- |
 | Web app | Upload, PDF review, corrections, product matching, policy editor, reports, and questions. | Displays suggestions and confirmed values separately; sends no PDF directly to an LLM. |
 | API | Auth, validation, purchase confirmation, policy evaluation, reports, search, and job status. | Owns business decisions and read-only metric definitions. |
-| Worker | PDF validation, digital extraction, OCR, parsing, indexing, embedding, retries. | Writes drafts and job results, never confirms purchases. |
+| Worker | PDF validation, digital extraction, parsing, indexing, embedding, retries. | Writes drafts and job results, never confirms purchases. |
 | PostgreSQL | Transactional records, job leases, full-text index, and optional vectors. | Source of truth for structured purchase facts; PDFs are stored separately. |
-| PDF storage | Original bytes and, if useful, derived OCR copy. | Private, referenced by opaque storage keys; not exposed as public URLs. |
+| PDF storage | Original PDF bytes. | Private, referenced by opaque storage keys; not exposed as public URLs. |
 | Optional AI adapter | Structured suggestions and cited answer composition. | Off by default, with limited excerpts and schema-validated responses. |
 
-One backend package is a **modular monolith**. The API and worker may run in separate containers for resource isolation, but they share domain types and database migrations. No message broker or microservice network is needed for this workload. Heavy OCR should run in the worker rather than in an API background task. The job table is an implementation choice for the initial scale; a dedicated queue can replace it later without changing purchase logic.
+One backend package is a **modular monolith**. The API and worker may run in separate containers for resource isolation, but they share domain types and database migrations. No message broker or microservice network is needed for this workload. Document extraction and indexing run in the worker rather than in an API background task. The job table is an implementation choice for the initial scale; a dedicated queue can replace it later without changing purchase logic.
 
 ### Module dependency rule
 
-`documents`, `purchases`, `catalog`, `policies`, `reports`, and `assistant` expose application services and typed interfaces. Database repositories, OCR, PDF tools, storage, and LLM clients implement those interfaces at the edges. The policy evaluator receives typed inputs; it does not import PDF, HTTP, ORM, or model code. The assistant reads approved purchase queries and document passages; it cannot call purchase-confirmation or policy-publishing commands.
+`documents`, `purchases`, `catalog`, `policies`, `reports`, and `assistant` expose application services and typed interfaces. Database repositories, PDF tools, storage, and LLM clients implement those interfaces at the edges. The policy evaluator receives typed inputs; it does not import PDF, HTTP, ORM, or model code. The assistant reads approved purchase queries and document passages; it cannot call purchase-confirmation or policy-publishing commands.
 
 ## 4. Core data model
 
@@ -73,7 +73,7 @@ Use stable IDs, database constraints, timestamps, and explicit migrations. The f
 | `ProcessingJob` | Kind, state, attempts, lease owner/expiry, next retry, error code, document ID. | Recover from worker failure without losing the upload. |
 | `SearchPassage` | Document, page, ordered text/table context, text index, embedding/model version if available. | Ground document answers in retrievable evidence. |
 
-An extraction candidate should carry a source such as `digital_parser`, `ocr_parser`, `supplier_rule`, `llm_suggestion`, or `user_entry`. For a reviewed value, keep a reference to the selected document field where possible; a manually supplied value has its own note and actor. Do not store a single ambiguous `total` when the PDF has merchandise, freight, tax, and grand total: model named amounts and reconcile them. The PDF examples show why: one supplier document explicitly calls itself a pre-order, while another includes a freight/handling row alongside products and an MSRP column separate from net purchase price. The parser must classify these, and the user must confirm the document's business role.
+An extraction candidate should carry a source such as `digital_parser`, `supplier_rule`, `llm_suggestion`, or `user_entry`. For a reviewed value, keep a reference to the selected document field where possible; a manually supplied value has its own note and actor. Do not store a single ambiguous `total` when the PDF has merchandise, freight, tax, and grand total: model named amounts and reconcile them. The PDF examples show why: one supplier document explicitly calls itself a pre-order, while another includes a freight/handling row alongside products and an MSRP column separate from net purchase price. The parser must classify these, and the user must confirm the document's business role.
 
 ### Linking a later document
 
@@ -103,13 +103,13 @@ stateDiagram-v2
     Reviewed --> Reviewed: New revision
 ```
 
-The diagram shows the useful user-visible document states. Internally, jobs record finer steps such as `extracting`, `ocr`, `parsing`, and `indexing`. A reviewed case has its separate business status (`planned`, `ordered`, or `purchase_recorded`) and may have a later supporting document in `needs_reconciliation`. Processing, review, and business status are distinct.
+The diagram shows the useful user-visible document states. Internally, jobs record finer steps such as `extracting`, `parsing`, and `indexing`. A reviewed case has its separate business status (`planned`, `ordered`, or `purchase_recorded`) and may have a later supporting document in `needs_reconciliation`. Processing, review, and business status are distinct.
 
 **Upload:** Require a valid PDF signature as well as content type; set byte and page limits; compute a hash; save original bytes privately; create a document and a job in one recoverable operation. If file storage succeeds and the database write fails, delete the orphan or reconcile it during maintenance. A client retry should not silently make a second purchase.
 
-**Extract:** Inspect each page for usable text. Use `pdfplumber` for text, tables, and locations; run OCRmyPDF/Tesseract for scanned pages, preserving the original. Store page text with an extraction version. Low-quality tables remain uncertain suggestions. A user can enter every required field manually if parsing fails.
+**Extract:** Inspect each page for usable selectable text. Use `pdfplumber` for text, tables, and locations in supported digital PDFs and store page text with an extraction version. Low-quality tables remain uncertain suggestions. If the PDF is image-only or scanned, preserve it, set an explicit unsupported-automatic-extraction status, and let the user enter every required field manually.
 
-**Parse and validate:** Start with a general parser and a small supplier-rule registry keyed by observable layout markers. Produce typed candidates for supplier, reference, currency, date, line descriptions, product codes, quantities, unit prices, discounts, fees, and totals. Classify rows as products, charges, or other text; preserve MSRP separately from the supplier's net unit price. Validate arithmetic with declared tolerances; never silently force a printed line or grand total to match. Mark missing or contradictory fields for review. OCR and LLM suggestions do not overwrite higher-trust user corrections.
+**Parse and validate:** Start with a general parser and a small supplier-rule registry keyed by observable layout markers. Produce typed candidates for supplier, reference, currency, date, line descriptions, product codes, quantities, unit prices, discounts, fees, and totals. Classify rows as products, charges, or other text; preserve MSRP separately from the supplier's net unit price. Validate arithmetic with declared tolerances; never silently force a printed line or grand total to match. Mark missing or contradictory fields for review. LLM suggestions do not overwrite higher-trust user corrections.
 
 **Review and confirm:** Show the PDF alongside editable candidate fields with page links. Require an explicit business status, supplier, a meaningful document date or an explicit unknown marker, currency for each amount, and reviewable product/charge lines. The exact field checklist can be tightened against the fixture set. Product matches and SKU/name suggestions are reviewed separately. Reviewing creates an immutable purchase-case revision in a transaction and invalidates no prior history. A planned pre-order can receive a provisional cost/price preview; it does not enter recorded purchase reports until the user changes its status explicitly.
 
@@ -182,7 +182,7 @@ supplylens/
       src/supplylens/
         api/             # HTTP routes, auth, schemas
         worker/          # Job runner and processors
-        documents/       # PDF/OCR/parser/review application logic
+        documents/       # PDF/parser/review application logic
         purchases/       # Confirmation, revisions, reconciliation
         catalog/         # Products, matches, name/SKU suggestions
         policies/        # Typed policy validation and evaluation
@@ -203,18 +203,18 @@ This layout expresses boundaries without making every module a separate package.
 ## 11. Security, privacy, and failure behavior
 
 - Require authentication before any real document upload or read. Start with one business workspace and simple roles such as `operator` and `admin` only if both are needed; avoid building SaaS tenancy prematurely. Enforce ownership checks on every PDF, passage, purchase, and estimate request.
-- Validate PDF bytes, size, page count, and processing time. Treat supplier text as untrusted input, including prompt-injection attempts inside a PDF. Run OCR with bounded resources and no arbitrary shell interpolation.
+- Validate PDF bytes, size, page count, and processing time. Treat supplier text as untrusted input, including prompt-injection attempts inside a PDF. Run extraction with bounded resources and no arbitrary shell interpolation.
 - Use private storage and short-lived authenticated retrieval through the API. Encrypt transport, manage provider keys as secrets, and never expose them to the browser.
 - LLM assistance is opt-in. Show when excerpts leave the application, minimize those excerpts, and log request metadata without raw private document text. Manual workflow remains available on provider failure.
 - Never log full documents, prices, credentials, or user-entered private policies by default. Retain an audit trail for confirmation, revision, policy publication, linking, and manual retry.
 - Back up the database **and** PDF objects together; a restored purchase must still have its source. Choose retention and deletion rules before using real business data in a hosted environment.
-- A failed OCR, parser, embedding, or LLM step should preserve the original PDF and a usable status. Confirmation of manually entered facts should be possible even when indexing is unavailable.
+- A failed parser, embedding, or LLM step should preserve the original PDF and a usable status. Image-only or scanned PDFs must also retain the original and an explicit unsupported-automatic-extraction status. Confirmation of manually entered facts should be possible even when indexing is unavailable.
 
 ## 12. Verification and observable quality
 
 | Risk | Verification |
 | --- | --- |
-| Wrong extracted amount or missed scanned line | Labeled digital/scanned PDF fixtures; compare field values and correction counts; inspect source-page links. |
+| Wrong extracted amount or missing selectable-text line | Labeled digital PDF fixtures; compare field values and correction counts; inspect source-page links. Verify image-only or scanned PDFs are preserved and routed to manual review. |
 | Duplicate purchase from bill plus invoice | Same-purchase link fixture; confirm reports count one recorded purchase and show both documents. |
 | Pre-order counted as spent or recorded purchase | Pre-order fixture stays in plan/order reporting and produces only labeled provisional estimates until explicit promotion. |
 | Freight row treated as sellable product | Invoice fixture separates handling charge from product lines and validates the document total. |
@@ -229,7 +229,7 @@ CI runs formatting, type checking, backend tests, frontend tests, migrations on 
 
 ## 13. Deployment decision gate
 
-Local development is concrete; hosting remains a measured choice. First measure an OCR job and embedding job on representative synthetic PDFs: peak RAM/CPU, job duration, storage size, and document-search latency. Then evaluate a provider against these requirements: persistent PostgreSQL with pgvector, private PDF storage and backups, an API process, a worker that can run long jobs, HTTPS/auth, and predictable cost. A free static frontend alone is insufficient for the full private workflow. A public demo can use synthetic data and a smaller worker configuration if the full stack is too expensive to keep online continuously.
+Local development is concrete; hosting remains a measured choice. First measure digital extraction and embedding jobs on representative synthetic PDFs: peak RAM/CPU, job duration, storage size, and document-search latency. Then evaluate a provider against these requirements: persistent PostgreSQL with pgvector, private PDF storage and backups, an API process, a worker that can run long jobs, HTTPS/auth, and predictable cost. A free static frontend alone is insufficient for the full private workflow. A public demo can use synthetic data and a smaller worker configuration if the full stack is too expensive to keep online continuously.
 
 Keep storage behind a `DocumentStore` interface (local disk for Compose, private object storage for hosting) and model generation behind a provider adapter. These are the main deployment substitutions. Do not make a hosting provider or public demo a prerequisite for local product verification.
 
@@ -237,7 +237,7 @@ Keep storage behind a `DocumentStore` interface (local disk for Compose, private
 
 1. **Repository skeleton:** Web/API/worker/DB Compose, migrations, health checks, CI, synthetic PDF fixture, architectural decision records.
 2. **Document to reviewed case:** Upload, original storage, digital PDF extraction, editable review, manual entry, explicit plan/order/purchase status, and history. This is the first useful slice.
-3. **Hard documents and reconciliation:** OCR, supplier layout rules, processing retries, duplicate suggestions, later-document linking and difference review.
+3. **Hard documents and reconciliation:** Supplier layout rules, explicit manual review for unsupported image-only documents, processing retries, duplicate suggestions, later-document linking, and difference review.
 4. **Catalog and prices:** Reviewed product mapping, name/SKU suggestions, guided policy editor, policy versioning, transparent estimates, private policy acceptance examples.
 5. **Reports:** One-purchase aggregation, supplier/product filters, currency-safe metrics, source drill-down.
 6. **Document search and optional AI:** Full-text search, local embeddings, hybrid evaluation, cited answer generation, bounded extraction help, approved metric interpretation.
@@ -256,7 +256,7 @@ Each slice should run end to end before adding the next. A useful initial PR is 
 | Jobs | PostgreSQL table with leases and retries. | Scale/operations warrant a broker. |
 | Search | Exact text always; local vectors and rank fusion when available. | Evaluation or resource measurements favor a simpler path. |
 | LLM | Opt-in adapter; disabled by default. | Measured correction savings and answer quality justify its cost. |
-| Hosting | Deferred until OCR/embedding measurements. | Local MVP meets acceptance criteria. |
+| Hosting | Deferred until extraction/embedding measurements. | Local MVP meets acceptance criteria. |
 
 These are implementation choices, not claims that the product already works. Record a short ADR when evidence changes a choice.
 
@@ -265,6 +265,5 @@ These are implementation choices, not claims that the product already works. Rec
 - [SupplyLens MVP Definition](SupplyLens-MVP-Definition-v0.1.md) — product scope and success criteria.
 - Private formula guide — separate business rules and acceptance examples; do not copy into the public repository.
 - [FastAPI background tasks guidance](https://fastapi.tiangolo.com/tutorial/background-tasks/) — motivation for a separate worker for heavy processing.
-- [OCRmyPDF documentation](https://ocrmypdf.readthedocs.io/en/latest/) — searchable text for scanned PDFs.
 - [PostgreSQL `SELECT` documentation](https://www.postgresql.org/docs/current/sql-select.html) — `SKIP LOCKED` queue-like use.
 - [pgvector documentation](https://github.com/pgvector/pgvector#hybrid-search) — hybrid text and vector search.

@@ -18,6 +18,21 @@ jobs:
     name: Changed files and coverage
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg17-bookworm
+        env:
+          POSTGRES_DB: supplylens_test
+          POSTGRES_USER: supplylens
+          POSTGRES_PASSWORD: localdev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U supplylens -d supplylens_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -61,7 +76,7 @@ jobs:
 
           backend=false
           if grep -Eq \
-            '^(apps/backend/(src|tests)/.*\.py|apps/backend/(\.coveragerc|pyproject\.toml|uv\.lock|\.python-version)|scripts/check_coverage\.py)$' \
+            '^(apps/backend/|compose\.yaml$|Makefile$|scripts/check_coverage\.py$)' \
             <<<"$changed_files"; then
             backend=true
           fi
@@ -123,14 +138,25 @@ jobs:
               --show-diff-on-failure
           fi
 
+      - name: Test version automation
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+
       - name: Enforce backend coverage threshold
         if: steps.changes.outputs.backend == 'true'
         working-directory: apps/backend
         run: >-
           uv run pytest
+          -m "not integration"
           --cov=supplylens
           --cov-report=term-missing
           --cov-fail-under=100
+
+      - name: Test migrations on clean PostgreSQL
+        if: steps.changes.outputs.backend == 'true'
+        working-directory: apps/backend
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://supplylens:localdev@127.0.0.1:5432/supplylens_test
+        run: uv run pytest -m integration tests/integration
 
       - name: Enforce frontend coverage thresholds
         if: steps.changes.outputs.web == 'true'

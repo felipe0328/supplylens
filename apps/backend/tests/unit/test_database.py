@@ -25,6 +25,18 @@ def test_get_database_url_strips_whitespace(
     assert database.get_database_url() == "postgresql://example"
 
 
+def test_get_database_url_rejects_whitespace_only_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "   ")
+
+    with pytest.raises(
+        ValueError,
+        match="DATABASE_URL environment variable is not set",
+    ):
+        database.get_database_url()
+
+
 def test_create_session_builds_lazy_engine_and_factory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -48,7 +60,7 @@ def test_create_session_builds_lazy_engine_and_factory(
     assert database.SessionLocal is factory
 
 
-def test_create_session_wraps_configuration_errors(
+def test_create_session_preserves_configuration_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def fail_to_get_url() -> str:
@@ -56,10 +68,7 @@ def test_create_session_wraps_configuration_errors(
 
     monkeypatch.setattr(database, "get_database_url", fail_to_get_url)
 
-    with pytest.raises(
-        RuntimeError,
-        match="Failed to create database session: missing URL",
-    ):
+    with pytest.raises(ValueError, match="missing URL"):
         database.create_session()
 
 
@@ -82,6 +91,16 @@ def test_get_session_creates_factory_lazily(
     session_context.__exit__.assert_called_once()
 
 
+def test_get_session_rejects_uninitialized_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(database, "SessionLocal", None)
+    monkeypatch.setattr(database, "create_session", lambda: None)
+
+    with pytest.raises(RuntimeError, match="factory was not initialized"):
+        next(database.get_session())
+
+
 def test_health_check_executes_readiness_query(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -90,7 +109,6 @@ def test_health_check_executes_readiness_query(
     connection_context.__enter__.return_value = connection
     engine = Mock()
     engine.connect.return_value = connection_context
-    monkeypatch.setattr(database, "SessionLocal", object())
     monkeypatch.setattr(database, "SessionEngine", engine)
 
     assert database.health_check() is True
@@ -99,7 +117,7 @@ def test_health_check_executes_readiness_query(
     assert str(statement) == "SELECT 1"
 
 
-def test_health_check_creates_session_lazily(
+def test_health_check_creates_engine_lazily(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     connection = Mock()
@@ -109,14 +127,25 @@ def test_health_check_creates_session_lazily(
     engine.connect.return_value = connection_context
 
     def create_session() -> None:
-        database.SessionLocal = object()
         database.SessionEngine = engine
 
-    monkeypatch.setattr(database, "SessionLocal", None)
     monkeypatch.setattr(database, "SessionEngine", None)
     monkeypatch.setattr(database, "create_session", create_session)
 
     assert database.health_check() is True
+
+
+def test_health_check_preserves_configuration_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def create_session() -> None:
+        raise ValueError("missing URL")
+
+    monkeypatch.setattr(database, "SessionEngine", None)
+    monkeypatch.setattr(database, "create_session", create_session)
+
+    with pytest.raises(ValueError, match="missing URL"):
+        database.health_check()
 
 
 def test_health_check_wraps_connection_errors(
@@ -124,11 +153,17 @@ def test_health_check_wraps_connection_errors(
 ) -> None:
     engine = Mock()
     engine.connect.side_effect = OSError("connection refused")
-    monkeypatch.setattr(database, "SessionLocal", object())
     monkeypatch.setattr(database, "SessionEngine", engine)
 
-    with pytest.raises(
-        RuntimeError,
-        match="Database health check failed: connection refused",
-    ):
+    with pytest.raises(RuntimeError, match="Database health check failed"):
+        database.health_check()
+
+
+def test_health_check_rejects_uninitialized_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(database, "SessionEngine", None)
+    monkeypatch.setattr(database, "create_session", lambda: None)
+
+    with pytest.raises(RuntimeError, match="Database health check failed"):
         database.health_check()

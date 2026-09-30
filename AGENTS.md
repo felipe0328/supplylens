@@ -26,12 +26,13 @@ The repository is still an early scaffold; the architecture document describes i
 - `GET /api/v1/health/ready` checks PostgreSQL connectivity through the database session module and returns `503` when configuration or connectivity fails.
 - `supplylens.database.database` loads `DATABASE_URL` from the environment, creates the SQLAlchemy engine and session factory lazily, yields sessions, and runs the readiness query.
 - Alembic is configured under `apps/backend/alembic/` and reads the application database URL and `Base.metadata`. The initial revision is empty because no domain models exist yet; `supplylens/models/` is currently only a package placeholder.
-- `apps/backend/tests/manual/` contains VS Code REST Client health checks. These are manual checks, not an automated test suite.
+- `apps/backend/tests/unit/` contains automated FastAPI and database tests. `tests/integration/` contains a Docker-backed Alembic migration test, and `tests/manual/` contains VS Code REST Client health checks.
 - `apps/web/` is a React 19, TypeScript 6, and Vite 8 starter. It does not yet implement a SupplyLens product workflow.
-- `fixtures/` contains generated, synthetic PDF scenarios and `expected.json` for future extraction, reconciliation, provenance, OCR, and validation tests.
-- `compose.yaml` runs PostgreSQL 17 with pgvector on host port `5433` using local-only development credentials.
-- The root `Makefile` wraps dependency installation, development servers, frontend checks, backend syntax compilation, Alembic commands, and Docker Compose operations.
-- Document ingestion, OCR, reviewed purchase records, catalog matching, pricing policies, reports, search, workers, authentication, and automated tests remain planned work.
+- `fixtures/` contains 12 generated, synthetic digital PDF scenarios and `expected.json` for future extraction, reconciliation, provenance, and validation tests.
+- `compose.yaml` runs PostgreSQL 17 with pgvector on host port `5433` for development and a disposable `supplylens_test` database on port `5434` under the `test` profile.
+- The root `Makefile` wraps locked dependency installation, development servers, backend lint/unit/integration tests, frontend checks, version tests, Alembic commands, and Docker Compose operations.
+- Automatic extraction in the MVP supports digital PDFs with selectable text. Image-only or scanned PDFs are preserved, marked unsupported for automatic extraction, and sent to manual review.
+- Document ingestion, reviewed purchase records, catalog matching, pricing policies, reports, search, workers, and authentication remain planned work.
 
 ## Project Structure and Module Organization
 
@@ -52,14 +53,19 @@ Run these from the repository root unless noted otherwise:
 - `make setup`: install locked backend and frontend dependencies.
 - `make be`: run the FastAPI development server.
 - `make fe`: run the Vite development server.
-- `make check`: compile backend Python and run frontend lint and build checks.
+- `make be-lint`: run Ruff lint and formatting checks.
+- `make be-test`: run backend unit/API tests without PostgreSQL.
+- `make be-test-integration`: start the disposable test database and run the Alembic migration test.
+- `make docker-test-stop`: remove the disposable test database and its temporary data.
+- `make version-test`: run isolated standard-library tests for version automation.
+- `make check`: run backend syntax, lint, unit/API tests, version tests, and frontend lint/build checks.
 - `make db-revision MESSAGE="..."`: generate an Alembic revision.
 - `make db-upgrade`: apply pending migrations.
 - `make db-check`: check whether model changes require a migration.
 - `make docker-start`: start Compose services.
 - `docker compose up -d db`: start only the local database on port `5433`.
 
-Equivalent direct commands include `uv sync` and `uv run uvicorn supplylens.api:app --reload` from `apps/backend`, plus `npm ci`, `npm run dev`, `npm run lint`, and `npm run build` from `apps/web`.
+Equivalent direct commands include `uv sync --locked` and `uv run uvicorn supplylens.api:app --reload` from `apps/backend`, plus `npm ci`, `npm run dev`, `npm run lint`, and `npm run build` from `apps/web`.
 
 Copy `apps/backend/.env.example` to `apps/backend/.env` before commands that require `DATABASE_URL`. Never commit the resulting `.env` file.
 
@@ -71,7 +77,7 @@ Money, quantities, validation, provenance, and policy calculations must remain d
 
 ## Testing Guidelines
 
-Automated suites are not yet scaffolded. Add backend tests in `apps/backend/tests/` using `pytest` and frontend tests beside components or under `apps/web/src/__tests__/`. Name Python tests `test_*.py`; name frontend tests `*.test.ts` or `*.test.tsx`.
+Add backend tests in `apps/backend/tests/` using `pytest` and frontend tests beside components or under `apps/web/src/__tests__/`. Name Python tests `test_*.py`; name frontend tests `*.test.ts` or `*.test.tsx`. Keep database integration tests marked `integration` so the unit coverage gate remains independent of Docker.
 
 Use only synthetic fixtures. Cover success, validation failure, provenance, database failure, immutable history, and the complete no-LLM behavior. Do not describe files under `apps/backend/tests/manual/` as automated coverage.
 

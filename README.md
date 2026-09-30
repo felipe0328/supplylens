@@ -6,7 +6,7 @@
 
 **Reviewable extraction · Human validation · Deterministic calculations · Evidence-first workflows**
 
-![Version](https://img.shields.io/badge/version-v0.1-8b5cf6)
+![Version](https://img.shields.io/badge/version-v0.1.0-8b5cf6)
 ![Status](https://img.shields.io/badge/status-early%20scaffold-orange)
 ![Backend](https://img.shields.io/badge/backend-FastAPI-009688)
 ![Frontend](https://img.shields.io/badge/frontend-React%20%2B%20TypeScript-149eca)
@@ -40,7 +40,7 @@ This repository is intentionally still in the early scaffold phase, but the arch
 | Frontend | Vite + React + TypeScript starter | A working UI shell exists, but not the business workflow yet |
 | Database | PostgreSQL 17 + pgvector via Docker Compose | Ready for local development and future migrations |
 | AI | Optional integration layer only | Not required for the MVP path |
-| Tests | Manual checks + starter test files | Automated coverage is still being built |
+| Tests | Pytest unit/API suite plus PostgreSQL migration integration test | Unit coverage is enforced; integration remains an explicit Docker-backed check |
 
 ### ✅ What is implemented
 
@@ -49,17 +49,18 @@ This repository is intentionally still in the early scaffold phase, but the arch
 - readiness endpoint that checks PostgreSQL connectivity
 - SQLAlchemy session factory and lazy engine startup
 - Alembic scaffold for future schema evolution
-- Docker Compose database service for local dev
-- root `Makefile` with backend/frontend/bootstrap helpers
+- Docker Compose database services for local development and isolated migration tests
+- FastAPI liveness/readiness and database unit tests with a 100% coverage gate
+- root `Makefile` with backend/frontend/bootstrap and quality helpers
 
 ### ⏳ What is still planned
 
-- PDF ingestion and OCR
+- digital PDF ingestion and extraction
 - reviewed purchase record models
 - catalog matching and policy layer
 - report generation and search
 - worker orchestration and provenance tracking
-- end-to-end test suite and validation flows
+- end-to-end product test suite and validation flows
 
 ---
 
@@ -72,7 +73,7 @@ flowchart LR
     API --> STORE[(Private PDF storage)]
     WORKER[Python worker] --> DB
     WORKER --> STORE
-    WORKER --> OCR[OCR + extraction tools]
+    WORKER --> EXTRACT[Digital PDF extraction tools]
     API -. optional .-> LLM[LLM adapter]
 ```
 
@@ -144,6 +145,8 @@ make be
 make fe
 make check
 make docker-start
+make be-test-integration
+make docker-test-stop
 ```
 
 ### Quality gates
@@ -169,7 +172,7 @@ docker compose up -d db
 
 # backend
 cd apps/backend
-uv sync
+uv sync --locked
 uv run uvicorn supplylens.api:app --reload
 
 # frontend
@@ -181,8 +184,17 @@ npm run dev
 ### Useful validation checks
 
 ```bash
-# backend syntax
+# backend syntax, Ruff, and unit/API tests
 make be-check
+make be-lint
+make be-test
+
+# disposable PostgreSQL migration test (port 5434)
+make be-test-integration
+make docker-test-stop
+
+# version automation
+make version-test
 
 # frontend lint/build
 make fe-lint
@@ -199,11 +211,12 @@ make db-upgrade
 
 The repo is deliberately lightweight, but the working flow is clear:
 
-1. start PostgreSQL via Docker
-2. start the backend and verify `/health`
-3. start the frontend and verify the app boots
-4. run the relevant lint/build or migration checks
-5. keep feature work grounded in synthetic documents, not real supplier data
+1. install the locked backend and frontend dependencies with `make setup`
+2. start PostgreSQL via Docker and apply/check migrations
+3. start the backend and verify both health endpoints
+4. run `make check` for backend and frontend quality gates
+5. run `make be-test-integration`, then remove the disposable test database with `make docker-test-stop`
+6. keep feature work grounded in synthetic documents, not real supplier data
 
 ### Health endpoints
 
@@ -240,7 +253,7 @@ This keeps the engineering workflow aligned with the product mission:
 ```mermaid
 flowchart LR
     A[Scaffold] --> B[Upload + review]
-    B --> C[OCR + reconciliation]
+    B --> C[Extraction + reconciliation]
     C --> D[Catalog + policy engine]
     D --> E[Reports + analytics]
     E --> F[Search + optional AI]

@@ -16,5 +16,23 @@ services:
       retries: 10
       start_period: 30s
 
+  db-test:
+    image: pgvector/pgvector:0.8.6-pg17-bookworm
+    profiles: ["test"]
+    environment:
+      POSTGRES_DB: supplylens_test
+      POSTGRES_USER: supplylens
+      POSTGRES_PASSWORD: localdev
+    ports:
+      - "127.0.0.1:5434:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U supplylens -d supplylens_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 10s
+
 volumes:
   postgres_data:

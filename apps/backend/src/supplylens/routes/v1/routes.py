@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, status
+
 from supplylens.database.database import health_check
 
 router = APIRouter()
@@ -11,17 +12,12 @@ def health() -> dict[str, str]:
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Database configuration error: {exc}",
+            detail="Database configuration error",
         ) from exc
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Database unavailable: {exc}",
-        ) from exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Database health check failed: {exc}",
+            detail="Database unavailable",
         ) from exc
 
     return {"status": "healthy"}

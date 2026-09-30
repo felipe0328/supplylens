@@ -4,7 +4,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ROOT = REPOSITORY_ROOT / "apps" / "backend"
 COVERAGE_THRESHOLD = 100.0
@@ -18,6 +17,8 @@ def main() -> int:
                 sys.executable,
                 "-m",
                 "pytest",
+                "-m",
+                "not integration",
                 "--cov=supplylens",
                 "--cov-report=term-missing",
                 f"--cov-fail-under={COVERAGE_THRESHOLD}",
