@@ -34,5 +34,20 @@ services:
       retries: 15
       start_period: 10s
 
+  minio:
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: supplylens
+      MINIO_ROOT_PASSWORD: supplylens-dev
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+
+
 volumes:
   postgres_data:
+  minio_data:

@@ -10,6 +10,7 @@ A pull request is a reviewable proposal with one coherent purpose. It should be 
 
 - Creating a branch, staging files, committing, pushing, or opening or updating a pull request requires an explicit developer request.
 - AI-authored or AI-modified contributions must not be staged unless the developer explicitly asks for those exact changes to be staged.
+- Invoking the repository's create-PR skill explicitly authorizes a separate commit containing only verified whitespace- or formatting-only changes auto-produced by configured hooks, limited to PR-diff paths that were clean before the hooks ran. This does not authorize amending commits or including any pre-existing changes.
 - Existing staged and unstaged changes are developer-owned. Do not absorb, rewrite, unstage, discard, or publish them without explicit direction.
 - A request to review a change authorizes read-only inspection and feedback only. It does not authorize fixes or Git mutations.
 - The developer owns the final scope, message, publication decision, and merge decision.
