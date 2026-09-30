@@ -139,10 +139,25 @@ This matches the local database in `compose.yaml`.
 
 ```bash
 make setup
+make hooks
 make be
 make fe
 make check
 make docker-start
+```
+
+### Quality gates
+
+Run checks locally before pushing instead of before every commit:
+
+```bash
+pre-commit install --hook-type pre-push
+```
+
+This installs the repository hooks for the `pre-push` stage, so the checks fail before a push is accepted. You can still run them manually at any time with:
+
+```bash
+pre-commit run --all-files
 ```
 
 ### Direct commands

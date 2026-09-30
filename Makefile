@@ -1,10 +1,12 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help setup fe fe-install fe-build fe-lint be be-install be-check check db-revision db-upgrade db-downgrade db-current db-history db-check docker-start docker-stop docker-status docker-logs
+.PHONY: help setup hooks hooks-uninstall fe fe-install fe-build fe-lint be be-install be-check check db-revision db-upgrade db-downgrade db-current db-history db-check docker-start docker-stop docker-status docker-logs
 
 help: ## Show available commands
 	@echo "SupplyLens development commands:"
 	@echo "  make setup          Install backend and frontend dependencies"
+	@echo "  make hooks          Install pre-push quality checks"
+	@echo "  make hooks-uninstall Remove the pre-push quality hook"
 	@echo "  make fe             Run the React development server"
 	@echo "  make be             Run the FastAPI development server"
 	@echo "  make be-check       Check backend Python syntax"
@@ -19,6 +21,12 @@ help: ## Show available commands
 	@echo "  make docker-stop    Stop and remove Docker Compose services"
 	@echo "  make docker-status  Show Docker Compose service status"
 	@echo "  make docker-logs    Follow Docker Compose logs"
+
+hooks: ## Install the repository quality gate as a pre-push hook
+	pre-commit install --hook-type pre-push
+
+hooks-uninstall: ## Remove the pre-push quality hook
+	pre-commit uninstall --hook-type pre-push
 
 setup: be-install fe-install ## Install all project dependencies
 
