@@ -1,0 +1,138 @@
+name: Quality checks
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  push:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: >-
+    quality-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Changed files and coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Find changed files
+        id: changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          all_files=false
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base_sha="$EVENT_BASE_SHA"
+          elif [[ -n "$EVENT_BEFORE" && ! "$EVENT_BEFORE" =~ ^0+$ ]]; then
+            base_sha="$EVENT_BEFORE"
+          elif [[ "$REF_NAME" != "$DEFAULT_BRANCH" ]] && \
+               git show-ref --verify --quiet "refs/remotes/origin/$DEFAULT_BRANCH"; then
+            base_sha="$(git merge-base "$HEAD_SHA" "origin/$DEFAULT_BRANCH")"
+          elif git rev-parse --verify "${HEAD_SHA}^" >/dev/null 2>&1; then
+            base_sha="$(git rev-parse "${HEAD_SHA}^")"
+          else
+            base_sha="$HEAD_SHA"
+            all_files=true
+          fi
+
+          if [[ "$all_files" == "true" ]]; then
+            changed_files="$(git ls-files)"
+          else
+            changed_files="$(git diff --name-only --diff-filter=ACMR "$base_sha" "$HEAD_SHA")"
+          fi
+
+          backend=false
+          if grep -Eq \
+            '^(apps/backend/(src|tests)/.*\.py|apps/backend/(\.coveragerc|pyproject\.toml|uv\.lock|\.python-version)|scripts/check_coverage\.py)$' \
+            <<<"$changed_files"; then
+            backend=true
+          fi
+
+          web=false
+          if grep -Eq '^apps/web/' <<<"$changed_files"; then
+            web=true
+          fi
+
+          {
+            echo "all_files=$all_files"
+            echo "base_sha=$base_sha"
+            echo "head_sha=$HEAD_SHA"
+            echo "backend=$backend"
+            echo "web=$web"
+          } >>"$GITHUB_OUTPUT"
+
+          echo "Changed files:"
+          printf '%s\n' "$changed_files"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: latest-known
+          enable-cache: true
+          cache-dependency-glob: apps/backend/uv.lock
+
+      - name: Sync backend dependencies
+        if: steps.changes.outputs.backend == 'true'
+        run: uv sync --project apps/backend --locked
+
+      - name: Set up Node.js
+        if: steps.changes.outputs.web == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install frontend dependencies
+        if: steps.changes.outputs.web == 'true'
+        run: npm ci --prefix apps/web
+
+      - name: Run pre-commit on changed files
+        env:
+          ALL_FILES: ${{ steps.changes.outputs.all_files }}
+          BASE_SHA: ${{ steps.changes.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.changes.outputs.head_sha }}
+          SKIP: backend-tests-coverage,web-unit-tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$ALL_FILES" == "true" ]]; then
+            uvx --from pre-commit==4.6.2 pre-commit run --all-files --show-diff-on-failure
+          else
+            uvx --from pre-commit==4.6.2 pre-commit run \
+              --from-ref "$BASE_SHA" \
+              --to-ref "$HEAD_SHA" \
+              --show-diff-on-failure
+          fi
+
+      - name: Enforce backend coverage threshold
+        if: steps.changes.outputs.backend == 'true'
+        working-directory: apps/backend
+        run: >-
+          uv run pytest
+          --cov=supplylens
+          --cov-report=term-missing
+          --cov-fail-under=100
+
+      - name: Enforce frontend coverage thresholds
+        if: steps.changes.outputs.web == 'true'
+        working-directory: apps/web
+        run: npm run test:coverage
