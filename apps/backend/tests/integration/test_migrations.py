@@ -64,7 +64,10 @@ def test_migrations_upgrade_and_downgrade_clean_postgres(
         with engine.connect() as connection:
             revision = MigrationContext.configure(connection).get_current_revision()
         assert revision == expected_head
-        assert set(inspect(engine).get_table_names()) == {"alembic_version"}
+        assert set(inspect(engine).get_table_names()) == {
+            "alembic_version",
+            "documents",
+        }
 
         command.downgrade(config, "base")
 

@@ -15,7 +15,7 @@ help: ## Show available commands
 	@echo "  make be-test-integration  Run migrations against the disposable test DB"
 	@echo "  make version-test   Run version automation tests"
 	@echo "  make check          Run backend and frontend checks"
-	@echo "  make db-revision MESSAGE=\"...\" Create an autogenerate migration"
+	@echo "  make db-revision msg=\"...\" Create an autogenerate migration"
 	@echo "  make db-upgrade     Apply all pending migrations"
 	@echo "  make db-downgrade   Roll back one migration"
 	@echo "  make db-current     Show the current migration revision"
@@ -74,9 +74,9 @@ version-test: ## Run version automation tests
 
 check: be-check be-lint be-test version-test fe-lint fe-build ## Run backend and frontend checks
 
-db-revision: ## Create an autogenerate migration (use MESSAGE="...")
-	$(if $(strip $(MESSAGE)),,$(error Usage: make db-revision MESSAGE="Add users table"))
-	cd apps/backend && uv run alembic revision --autogenerate -m "$(MESSAGE)"
+db-revision: ## Create an autogenerate migration (use msg="...")
+	$(if $(strip $(msg)),,$(error Usage: make db-revision msg="Add users table"))
+	cd apps/backend && uv run alembic revision --autogenerate -m "$(msg)"
 
 db-upgrade: ## Apply all pending Alembic migrations
 	cd apps/backend && uv run alembic upgrade head

@@ -29,7 +29,7 @@ markers = [
     "integration: tests that require the disposable PostgreSQL test database",
 ]
 python_files = ["test_*.py"]
-testpaths = ["tests"]
+testpaths = ["tests", "src/supplylens/models/tests"]
 
 [tool.ruff]
 line-length = 88
