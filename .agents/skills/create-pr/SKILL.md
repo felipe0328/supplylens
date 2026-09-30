@@ -9,16 +9,16 @@ Open one draft GitHub pull request that accurately represents the committed bran
 
 ## Authority and boundaries
 
-Invoking this skill authorizes read-only ticket lookup, running the repository's configured pre-commit hooks, pushing the current branch's existing commits when required, and opening one draft PR. It does not authorize staging, committing, amending, rebasing, force-pushing, modifying tickets, marking a PR ready, or merging. Pre-commit hooks may auto-fix local files; never stage those changes automatically.
+Invoking this skill authorizes read-only ticket lookup, running relevant configured pre-commit hooks, pushing the current branch when required, and opening one draft PR. It also authorizes a narrowly scoped follow-up commit for verified whitespace- or formatting-only fixes produced by pre-commit, but only on paths that were clean before the hooks ran and are part of the PR diff. Never amend, rebase, force-push, stage unrelated or pre-existing changes, modify tickets, mark a PR ready, or merge.
 
 Read the repository-root `AGENTS.md` and `specifications/pull-request-definition.md` before drafting. Those files remain authoritative if this workflow and repository policy differ.
 
 ## Establish the change set
 
-1. Inspect the current branch, working-tree and index status, configured remotes, upstream, remote default branch, and existing PRs for the branch.
+1. Collect branch, status, remotes, upstream, remote default branch, and existing-PR state in one batched inventory where tools permit.
 2. Resolve the base branch from the remote default. Ask the developer when the base is missing or ambiguous.
-3. Review the complete `<base>...HEAD` commit list and diff. Also inspect staged and unstaged changes so they are not mistaken for content already included in the branch.
-4. Never stage or commit working-tree changes. If material uncommitted changes exist, explain that they will not be in the PR and ask whether to proceed with only the committed branch or wait for the developer to commit them.
+3. Review the complete `<base>...HEAD` commit list and diff once. Check staged/unstaged paths; read their full diffs only when they overlap the PR or affect whether it can safely proceed.
+4. Never include existing working-tree changes in the PR. If material uncommitted changes exist, ask whether to proceed with committed changes only. The pre-commit auto-fix exception below applies only to hook-produced formatting changes.
 5. If a PR already exists for the head branch, do not create a duplicate. Report its URL and state; update it only if the developer explicitly requests an update.
 
 ## Resolve ticket and intention
@@ -68,14 +68,14 @@ Additional evidence may follow these sections when useful, but do not replace or
 
 ## Pre-commit gate
 
-Run this gate after the proposed PR content is known and immediately before pushing or opening the PR:
+Run this gate after the proposed PR content is known and immediately before pushing or opening the PR. Batch independent read-only checks and reuse the established diff and test evidence instead of repeating it:
 
 1. Recheck the branch, base, status, commits, and full diff.
-2. Run Git whitespace/error checks against the branch diff and any local changes. Fail on unresolved conflict markers or malformed patches.
+2. Run `git diff --check <base>...HEAD`, `git diff --check`, and `git diff --cached --check`. Check changed files for conflict markers; fail on any whitespace errors, unresolved markers, or malformed patches.
 3. Inspect the diff for credentials, private supplier or customer information, private pricing policies, generated artifacts, and accidental unrelated files.
-4. Run `pre-commit run --all-files`. This is mandatory when `.pre-commit-config.yaml` exists. If the command is unavailable or cannot complete, treat that as a failed gate rather than silently substituting another command.
-5. Recheck the working tree after pre-commit. If a hook changed any file, do not stage it or open the PR; report the changes and wait for the developer to review and commit them.
-6. Run any additional repository checks not covered by pre-commit and required by the PR definition. Use the commands in `AGENTS.md` and the `Makefile`; run focused unit tests for changed behavior when a relevant suite exists. For database or migration changes, also run the applicable migration check and record any environment dependency.
+4. When `.pre-commit-config.yaml` exists, run `pre-commit run --files <changed PR files>` using existing files from `<base>...HEAD`. Run `--all-files` only when the PR changes the hook configuration or a repository-wide rule requires it. If pre-commit is unavailable or cannot complete, treat the gate as failed.
+5. Record the worktree state before hooks. If hooks fail after applying fixes, inspect the exact resulting diff. Automatically stage only paths that were clean before hooks, are in the PR diff, and contain exclusively whitespace/formatting changes (such as trailing whitespace, final newline, or formatter-only output). Commit those exact paths in a separate follow-up commit, rerun pre-commit on them, and continue only if it passes. Never amend. For any other changed path or non-formatting edit, stop and report the diff; do not stage or commit it.
+6. Run only additional checks required by the PR definition and not already covered by the changed-file hooks. Use the relevant commands from `AGENTS.md` and the `Makefile`; avoid rerunning broad checks when focused hooks already cover the changed behavior. For database or migration changes, run the applicable migration check and record environment dependencies.
 7. Perform practical manual checks when feasible and relevant. Never claim an unperformed check; state `Not run` or `Not applicable` with the reason.
 
 If a required check fails, sensitive data is present, the diff is inconsistent with the ticket, or the rollback is unsafe, do not push or open the PR. Report the blocker and the exact failing command or finding. Do not modify files to fix it unless the developer separately asks for implementation.
@@ -86,6 +86,6 @@ If a required check fails, sensitive data is present, the diff is inconsistent w
 2. Push the current branch's existing commits to its normal remote if it has no upstream. Never force-push.
 3. Create the PR as a draft against the resolved base using the prepared title and body. With `gh`, prefer a temporary body file outside the repository and `gh pr create --draft --base <base> --head <branch> --title <title> --body-file <file>`.
 4. Verify the created PR's URL, draft state, base branch, head branch, title, and body. Remove any temporary body file.
-5. Report the PR URL, ticket context used, pre-commit commands and results, and any testing limitations.
+5. Report the PR URL, ticket context used, checks actually run and results, any auto-fix commit created, and testing limitations. Keep the report concise.
 
 Stop after the verified draft is open. Do not mark it ready for review, request reviewers, add labels, merge it, or modify Jira unless the developer explicitly requests those actions.

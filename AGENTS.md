@@ -5,7 +5,7 @@
 - Default to read-only work. If the developer asks for a review, explanation, diagnosis, opinion, or ideas, inspect the repository and report findings without modifying files.
 - Modify files only when the developer explicitly asks for an implementation or names a file or artifact to update. Keep changes within that request; propose unrelated improvements instead of applying them.
 - An explicit edit request authorizes only the edits needed for that request. It does not authorize staging, committing, pushing, opening a pull request, or changing unrelated work.
-- Never stage AI-authored or AI-modified files unless the developer explicitly asks for those exact changes to be staged. Preserve the existing Git index and do not disturb developer-staged work.
+- Never stage AI-authored or AI-modified files unless the developer explicitly asks for those exact changes to be staged. Invoking the repository's create-PR skill is a narrow exception for verified whitespace- or formatting-only pre-commit fixes on PR-diff paths that were clean before hooks ran; commit only those exact paths separately, never amend, and preserve the existing Git index and developer-staged work.
 - Before editing, inspect `git status` and relevant diffs. Treat all existing changes as developer-owned and preserve them.
 - Ask before destructive or difficult-to-reverse operations and before any action whose scope is ambiguous.
 
