@@ -29,10 +29,12 @@ help: ## Show available commands
 	@echo "  make docker-test-stop   Remove the disposable PostgreSQL test database"
 
 hooks: ## Install the repository quality gate as a pre-push hook
+	pre-commit uninstall
 	pre-commit install --hook-type pre-push
 
 hooks-uninstall: ## Remove the pre-push quality hook
 	pre-commit uninstall --hook-type pre-push
+	pre-commit uninstall
 
 setup: be-install fe-install ## Install all project dependencies
 
