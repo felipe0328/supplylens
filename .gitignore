@@ -44,7 +44,7 @@ pnpm-debug.log*
 # Application runtime data
 data/
 uploads/
-storage/
+/storage/
 tmp/
 temp/
 *.sqlite

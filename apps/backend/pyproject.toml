@@ -23,14 +23,17 @@ dev = [
     "pytest>=8.3.5",
     "pytest-cov>=6.1.1",
     "ruff==0.16.9",
+    "types-boto3[s3]>=1.43.105",
 ]
 
 [tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
 markers = [
-    "integration: tests that require the disposable PostgreSQL test database",
+    "integration: tests that require disposable PostgreSQL or MinIO services",
+    "r2_smoke: explicitly opted-in smoke tests against a dedicated Cloudflare R2 test bucket",
 ]
-python_files = ["test_*.py"]
-testpaths = ["tests", "src/supplylens/models/tests"]
+python_files = ["test_*.py", "*_test.py"]
+testpaths = ["src"]
 
 [tool.ruff]
 line-length = 88

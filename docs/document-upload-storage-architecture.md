@@ -366,7 +366,7 @@ If the frontend runs on a different origin, update `AllowedOrigins`.
 
 ---
 
-## 6. Important local-development detail: internal vs public endpoint
+## 6. Important local-development detail: single endpoint
 
 This is easy to get wrong.
 
@@ -378,34 +378,21 @@ http://minio:9000
 
 The browser cannot resolve the Docker hostname `minio`.
 
-The browser must use:
+For the current single-endpoint implementation, configure one endpoint that is reachable by both the API and the browser. When FastAPI runs on the host, use:
 
 ```text
 http://localhost:9000
 ```
 
-A presigned URL contains a cryptographic signature tied to the request. Do not generate a URL with `minio:9000` and then replace the hostname with `localhost:9000`; that can invalidate the signature.
+A presigned URL contains a cryptographic signature tied to the request. Do not generate a URL with one hostname and then replace it with another; that can invalidate the signature.
 
-Use **two endpoint settings** locally:
-
-```env
-S3_INTERNAL_ENDPOINT=http://minio:9000
-S3_PUBLIC_ENDPOINT=http://localhost:9000
-```
-
-Use:
-
-- `S3_INTERNAL_ENDPOINT` for FastAPI/worker operations such as `HEAD`, `GET`, and `DELETE`;
-- `S3_PUBLIC_ENDPOINT` when generating browser-facing presigned URLs.
-
-If FastAPI runs directly on the host instead of Docker, both can be:
+Use this setting for local development when FastAPI and the browser both run on the host:
 
 ```env
-S3_INTERNAL_ENDPOINT=http://localhost:9000
-S3_PUBLIC_ENDPOINT=http://localhost:9000
+S3_ENDPOINT=http://localhost:9000
 ```
 
-In production both settings normally point to the Cloudflare R2 S3 endpoint.
+If FastAPI runs inside Docker while the browser runs on the host, one endpoint may not be reachable from both environments. The current implementation does not support separate internal and browser-facing endpoints; keep FastAPI on the host until that support is added. In production, set `S3_ENDPOINT` to the Cloudflare R2 S3 endpoint.
 
 ---
 
@@ -414,51 +401,44 @@ In production both settings normally point to the Cloudflare R2 S3 endpoint.
 ### 7.1 Local `.env`
 
 ```env
+DATABASE_URL=postgresql+psycopg://supplylens:localdev@127.0.0.1:5433/supplylens
 APP_ENV=development
-
-DATABASE_URL=postgresql+psycopg://supplylens:supplylens@localhost:5432/supplylens
 
 S3_PROVIDER=minio
 S3_BUCKET=supplylens-documents
 S3_REGION=us-east-1
 
-S3_INTERNAL_ENDPOINT=http://localhost:9000
-S3_PUBLIC_ENDPOINT=http://localhost:9000
+S3_ENDPOINT=http://localhost:9000
 
 S3_ACCESS_KEY_ID=supplylens
 S3_SECRET_ACCESS_KEY=supplylens-dev-password
 
 S3_UPLOAD_URL_TTL_SECONDS=900
+S3_DOWNLOAD_URL_TTL_SECONDS=900
 
 MAX_DOCUMENT_SIZE_BYTES=26214400
 STORAGE_HARD_LIMIT_BYTES=8589934592
 ```
 
-If API and worker are Dockerized:
-
-```env
-S3_INTERNAL_ENDPOINT=http://minio:9000
-S3_PUBLIC_ENDPOINT=http://localhost:9000
-```
+This single-endpoint configuration assumes the API and browser can both reach MinIO at `localhost:9000`. A containerized API needs separate internal and browser-facing endpoint support, which is not part of the current implementation.
 
 ### 7.2 Production `.env`
 
 ```env
-APP_ENV=production
-
 DATABASE_URL=...
+APP_ENV=production
 
 S3_PROVIDER=r2
 S3_BUCKET=supplylens-documents
 S3_REGION=auto
 
-S3_INTERNAL_ENDPOINT=https://<CLOUDFLARE_ACCOUNT_ID>.r2.cloudflarestorage.com
-S3_PUBLIC_ENDPOINT=https://<CLOUDFLARE_ACCOUNT_ID>.r2.cloudflarestorage.com
+S3_ENDPOINT=https://<CLOUDFLARE_ACCOUNT_ID>.r2.cloudflarestorage.com
 
 S3_ACCESS_KEY_ID=...
 S3_SECRET_ACCESS_KEY=...
 
 S3_UPLOAD_URL_TTL_SECONDS=900
+S3_DOWNLOAD_URL_TTL_SECONDS=900
 
 MAX_DOCUMENT_SIZE_BYTES=26214400
 STORAGE_HARD_LIMIT_BYTES=8589934592
@@ -490,7 +470,7 @@ class ObjectInfo:
 
 
 @dataclass(frozen=True)
-class PresignedUpload:
+class PresignedURL:
     url: str
     method: str
     headers: dict[str, str]
@@ -503,9 +483,9 @@ class ObjectStorage(Protocol):
         *,
         object_key: str,
         content_type: str,
-        expires_in_seconds: int,
-    ) -> PresignedUpload:
-        ...
+      size_bytes: int,
+        expiration: int | None = None,
+    ) -> PresignedURL: ...
 
     def head_object(self, *, object_key: str) -> ObjectInfo:
         ...
@@ -522,13 +502,28 @@ class ObjectStorage(Protocol):
         self,
         *,
         object_key: str,
-        expires_in_seconds: int,
-    ) -> str:
-        ...
+        expiration: int | None = None,
+    ) -> PresignedURL: ...
 
     def delete_object(self, *, object_key: str) -> None:
         ...
 ```
+
+The port defines `StorageError`, `ObjectNotFoundError`, and
+`StorageUnavailableError`. The S3 adapter translates known missing-object
+responses and connectivity or service availability failures to these errors,
+preserving the provider exception as `__cause__`. Other provider errors retain
+their original type.
+
+Validate the effective expiry for both upload and download URLs after applying
+the configured default or caller override. It must be an integer from 1 through
+604,800 seconds; both defaults are 900 seconds. Upload `PresignedURL.headers`
+contains `Content-Type` and `If-None-Match: *`; the signed `PUT` also binds the
+declared exact content length. Storage must reject a second `PUT` to the same
+key and preserve the first object. Verify this signed conditional request end
+to end against both providers before production use: [Cloudflare R2 S3
+compatibility](https://developers.cloudflare.com/r2/api/s3/api/) and [MinIO
+conditional writes](https://www.min.io/blog/leading-the-way-minios-conditional-write-feature-for-modern-data-workloads).
 
 Implementation:
 
@@ -544,19 +539,9 @@ S3ObjectStorage
 
 The only environment-specific behavior should be configuration.
 
-### 8.1 Two S3 clients locally
+### 8.1 Single S3 client
 
-It is useful for `S3ObjectStorage` to contain two boto3 clients:
-
-```text
-internal_client
-    Used by FastAPI and workers to call storage.
-
-signing_client
-    Used only to generate browser-facing presigned URLs.
-```
-
-The clients can use different endpoint URLs locally but the same credentials and bucket.
+The adapter owns its validated storage settings and boto3 client per instance. Trim and validate the endpoint, bucket, access key, and secret key when constructing settings. Unit tests can inject an S3 client. The adapter uses one client and one `S3_ENDPOINT` for object operations and URL signing. This is suitable when that endpoint is reachable by both the API and browser. A future containerized API setup may require separate internal and browser-facing endpoints.
 
 Pseudo-implementation:
 
@@ -575,16 +560,9 @@ class S3ObjectStorage:
         }
 
         self._bucket = settings.s3_bucket
-
-        self._internal = boto3.client(
+        self._client = boto3.client(
             "s3",
-            endpoint_url=settings.s3_internal_endpoint,
-            **common,
-        )
-
-        self._signer = boto3.client(
-            "s3",
-            endpoint_url=settings.s3_public_endpoint,
+            endpoint_url=settings.s3_endpoint,
             **common,
         )
 
@@ -593,22 +571,28 @@ class S3ObjectStorage:
         *,
         object_key: str,
         content_type: str,
+      size_bytes: int,
         expires_in_seconds: int,
-    ) -> PresignedUpload:
-        url = self._signer.generate_presigned_url(
+    ) -> PresignedURL:
+      if size_bytes <= 0 or size_bytes > settings.max_document_size_bytes:
+        raise ValueError("Upload size is outside the configured limit.")
+
+        url = self._client.generate_presigned_url(
             ClientMethod="put_object",
             Params={
                 "Bucket": self._bucket,
                 "Key": object_key,
                 "ContentType": content_type,
+                "ContentLength": size_bytes,
+                "IfNoneMatch": "*",
             },
             ExpiresIn=expires_in_seconds,
         )
 
-        return PresignedUpload(
+        return PresignedURL(
             url=url,
             method="PUT",
-            headers={"Content-Type": content_type},
+            headers={"Content-Type": content_type, "If-None-Match": "*"},
             expires_in_seconds=expires_in_seconds,
         )
 ```
@@ -671,7 +655,7 @@ Before creating the upload:
 7. Generate `document_id` as UUID.
 8. Construct the object key from `document_id`.
 9. Insert the `documents` row in `PENDING` state.
-10. Generate a short-lived presigned `PUT` URL.
+10. Generate a short-lived presigned `PUT` URL bound to the declared exact content length.
 11. Return the upload information.
 
 Do not trust the filename extension as proof that the content is a PDF.
@@ -1483,15 +1467,18 @@ This can be changed by configuration.
 
 Because the browser uploads directly to object storage, FastAPI is not physically in the data path.
 
-The application should:
+The application should reject a declared size above `MAX_DOCUMENT_SIZE_BYTES` before issuing a URL. The S3 adapter also checks that limit and signs the exact `Content-Length` for the accepted `PUT`; changing the signed length invalidates the request. Browsers set this header from a `File`/`Blob` body, so the frontend should not try to set it manually.
 
-1. reject a declared file size above the limit before signing;
-2. verify `ContentLength` with `HEAD` after upload;
-3. delete and reject an object if the actual size is above the limit.
+This uses an exact size, not a range policy. Cloudflare R2 supports presigned `PUT` but does not currently support presigned form `POST` policies ([R2 presigned URL support](https://developers.cloudflare.com/r2/api/s3/presigned-urls/)). The signed request also carries `If-None-Match: *`, so a replayed `PUT` to the same key must fail without replacing the first object. After upload, the API must still verify `ContentLength` with `HEAD` and delete/reject an invalid object. Verify the signed length and conditional-write request against MinIO and R2 before production rollout.
 
-For this MVP, that is sufficient.
+Frontend size checks are useful for feedback but are not a security boundary. A storage gateway/proxy that counts streamed bytes is needed if protection against attempted excess ingress traffic is required.
 
-If strict prevention of oversized uploads before any bytes reach storage becomes necessary, introduce a storage gateway/Worker or a provider mechanism specifically designed to enforce upload policies.
+The API should also:
+
+1. verify `ContentLength` with `HEAD` after upload;
+2. delete and reject an object if the actual size is above the limit.
+
+Together, exact-length signing and post-upload verification prevent accepting an oversized stored object. They do not replace a gateway if ingress bandwidth itself must be strictly capped.
 
 ### 17.3 Presigned URLs
 
@@ -1801,31 +1788,61 @@ Examples:
 
 ### 22.2 Integration tests
 
-Run:
+The normal pytest run is the unit-test run. From `apps/backend`, `uv run
+pytest` uses the configured `src` default path, and `make be-test` runs the
+same co-located unit/API suite with the coverage gate. Neither command starts
+Docker services or includes `tests/integration/`.
 
-```text
-FastAPI + PostgreSQL + MinIO
+The disposable test services are separate from development data. `minio-test`
+uses its own credentials, host port, and tmpfs data directory; it does not mount
+the persistent `minio_data` volume or use the development bucket. Start only
+what each command needs:
+
+```bash
+make be-test-integration         # starts db-test and minio-test
+make docker-test-storage-stop    # removes only minio-test
+make docker-test-stop            # removes only db-test and its disposable data
 ```
 
-Verify real S3 behavior:
+`make be-test-integration` selects tests marked `integration` from
+`tests/integration/` and starts the test services they need. It does not run
+as part of `make check`.
 
-1. request presigned URL;
-2. upload fixture with HTTP `PUT`;
-3. call completion endpoint;
-4. confirm DB row;
-5. confirm MinIO object;
-6. download using backend storage adapter.
+The storage integration test creates a unique bucket and object key, then uses
+the actual presigned `PUT`, `HEAD`, adapter download, presigned `GET`, and delete
+operations. It checks bytes, size, content type, ETag, wrong signed content type
+and length, and replay protection with a same-length replacement body.
 
-This catches problems that a fake storage adapter cannot catch, especially:
+### 22.3 Opt-in Cloudflare R2 smoke test
 
-- presigned signatures;
-- CORS-related configuration;
-- object-key handling;
-- `HEAD`;
-- metadata;
-- content length.
+Before production rollout, run the R2 smoke test against a dedicated bucket
+whose name ends in `-test`, using credentials restricted to that bucket. The
+test checks that a body with the wrong signed length fails and that replaying a
+valid signed `PUT` with a different same-length body fails while the first
+object remains unchanged. It deletes its uniquely named object afterward.
 
-### 22.3 Browser E2E tests
+This smoke test is skipped unless explicitly enabled and is not part of the
+local or CI integration commands. In PowerShell, set the dedicated endpoint,
+bucket, and test-only credentials, then run:
+
+```powershell
+$env:RUN_R2_STORAGE_SMOKE = "1"
+$env:R2_SMOKE_ENDPOINT = "https://<account-id>.r2.cloudflarestorage.com"
+$env:R2_SMOKE_BUCKET = "supplylens-r2-smoke-test"
+$env:R2_SMOKE_REGION = "auto"
+$env:R2_SMOKE_ACCESS_KEY_ID = "<test-only-access-key>"
+$env:R2_SMOKE_SECRET_ACCESS_KEY = "<test-only-secret-key>"
+Push-Location apps/backend
+uv run pytest -m r2_smoke tests/integration/test_storage.py
+Pop-Location
+```
+
+Use an R2 bucket created for this test only, never a production bucket. Keep
+these credentials in the shell or a local secret manager; do not put them in
+`.env.example`, source control, or CI variables. A passing run is required
+before enabling this conditional-write behavior in production.
+
+### 22.4 Browser E2E tests
 
 Use Playwright once the React flow exists.
 

@@ -40,7 +40,7 @@ This repository is intentionally still in the early scaffold phase, but the arch
 | Frontend | Vite + React + TypeScript starter | A working UI shell exists, but not the business workflow yet |
 | Database | PostgreSQL 17 + pgvector via Docker Compose | Ready for local development and future migrations |
 | AI | Optional integration layer only | Not required for the MVP path |
-| Tests | Pytest unit/API suite plus PostgreSQL migration integration test | Unit coverage is enforced; integration remains an explicit Docker-backed check |
+| Tests | Unit/API tests by default; PostgreSQL and MinIO integration tests run explicitly | `pytest` and `make be-test` run unit tests; `make be-test-integration` runs integration tests |
 
 ### ✅ What is implemented
 
@@ -125,7 +125,7 @@ SupplyLens/
 
 ```powershell
 # from the repo root
-Copy-Item apps/backend/.env.example apps/backend/.env
+Copy-Item .env.example .env
 ```
 
 The default local backend env points to:
@@ -146,6 +146,7 @@ make fe
 make check
 make docker-start
 make be-test-integration
+make docker-test-storage-stop
 make docker-test-stop
 ```
 
@@ -184,13 +185,14 @@ npm run dev
 ### Useful validation checks
 
 ```bash
-# backend syntax, Ruff, and unit/API tests
+# backend syntax, Ruff, and unit/API tests (no Docker services)
 make be-check
 make be-lint
 make be-test
 
-# disposable PostgreSQL migration test (port 5434)
+# PostgreSQL and MinIO integration tests (Docker services)
 make be-test-integration
+make docker-test-storage-stop
 make docker-test-stop
 
 # version automation
@@ -205,6 +207,10 @@ make db-check
 make db-upgrade
 ```
 
+From `apps/backend`, plain `uv run pytest` uses the configured default test path
+and runs the co-located unit tests. Integration tests are outside that default
+path and run only through `make be-test-integration`.
+
 ---
 
 ## 🧪 Current workflow and checks
@@ -215,7 +221,7 @@ The repo is deliberately lightweight, but the working flow is clear:
 2. start PostgreSQL via Docker and apply/check migrations
 3. start the backend and verify both health endpoints
 4. run `make check` for backend and frontend quality gates
-5. run `make be-test-integration`, then remove the disposable test database with `make docker-test-stop`
+5. run `make be-test-integration`, then remove the disposable test services with `make docker-test-storage-stop` and `make docker-test-stop`
 6. keep feature work grounded in synthetic documents, not real supplier data
 
 ### Health endpoints
