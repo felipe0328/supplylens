@@ -184,6 +184,19 @@ jobs:
           --health-interval 2s
           --health-timeout 3s
           --health-retries 15
+      minio:
+        image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+        env:
+          MINIO_ROOT_USER: supplylens-test
+          MINIO_ROOT_PASSWORD: supplylens-test-only
+        ports:
+          - 9002:9000
+        options: >-
+          --health-cmd "curl --fail --silent http://127.0.0.1:9000/minio/health/ready >/dev/null"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+          --health-start-period 5s
 
     steps:
       - name: Check out repository
