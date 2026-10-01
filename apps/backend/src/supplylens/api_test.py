@@ -1,10 +1,51 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from supplylens.api import app
+from supplylens.api import app, create_app
+from supplylens.config import AppEnvironment
 from supplylens.routes.v1 import routes
 
 client = TestClient(app)
+
+
+@pytest.mark.parametrize(
+    ("environment", "expected_debug"),
+    [
+        ("development", True),
+        ("test", False),
+        ("production", False),
+    ],
+)
+def test_app_debug_mode_uses_app_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    environment: str,
+    expected_debug: bool,
+) -> None:
+    monkeypatch.setenv("APP_ENV", environment)
+
+    assert create_app().debug is expected_debug
+
+
+def test_app_environment_rejects_unknown_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "staging")
+
+    with pytest.raises(ValueError, match="APP_ENV must be"):
+        create_app()
+
+
+def test_create_app_can_be_configured_explicitly() -> None:
+    assert create_app(AppEnvironment.DEVELOPMENT).debug is True
+    assert create_app(AppEnvironment.PRODUCTION).debug is False
+
+
+def test_create_app_registers_health_routes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(routes, "health_check", lambda: True)
+    configured_client = TestClient(create_app(AppEnvironment.TESTING))
+
+    assert configured_client.get("/health").json() == {"status": "ok"}
+    assert configured_client.get("/api/v1/health/ready").json() == {"status": "healthy"}
 
 
 def test_liveness_succeeds_without_database_configuration(

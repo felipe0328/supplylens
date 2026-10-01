@@ -184,7 +184,6 @@ jobs:
           --health-interval 2s
           --health-timeout 3s
           --health-retries 15
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -209,6 +208,9 @@ jobs:
           --cov=supplylens
           --cov-report=term-missing
           --cov-fail-under=100
+
+      - name: Start disposable MinIO
+        run: docker compose --profile test up -d --wait minio-test
 
       - name: Test migrations on clean PostgreSQL
         working-directory: apps/backend

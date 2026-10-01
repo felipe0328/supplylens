@@ -6,7 +6,15 @@ from dotenv import load_dotenv
 
 load_dotenv()  # Load environment variables from .env file
 
-BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME")
+
+def required_env(name: str) -> str:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        raise ValueError(f"{name} environment variable is not set.")
+    return value.strip()
+
+
+BUCKET_NAME = required_env("S3_BUCKET")
 ALLOWED_ORIGINS: list = [
     origin.strip()
     for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
@@ -15,9 +23,9 @@ ALLOWED_ORIGINS: list = [
 
 s3 = boto3.client(
     "s3",
-    aws_access_key_id=os.getenv("S3_ACCESS_KEY"),
-    aws_secret_access_key=os.getenv("S3_SECRET_KEY"),
-    endpoint_url=os.getenv("S3_ENDPOINT"),
+    aws_access_key_id=required_env("S3_ACCESS_KEY_ID"),
+    aws_secret_access_key=required_env("S3_SECRET_ACCESS_KEY"),
+    endpoint_url=required_env("S3_ENDPOINT"),
     region_name=os.getenv("S3_REGION", "us-east-1"),
 )
 

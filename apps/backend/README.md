@@ -17,7 +17,7 @@ The procurement, document-ingestion, and policy domains are not implemented yet.
 From the repository root, create the local environment file:
 
 ```powershell
-Copy-Item apps/backend/.env.example apps/backend/.env
+Copy-Item .env.example .env
 ```
 
 The development database uses:
@@ -58,10 +58,13 @@ make be-lint
 make be-test
 make version-test
 make be-test-integration
+make docker-test-storage-stop
 make docker-test-stop
 ```
 
-`make be-test` runs tests that do not need PostgreSQL and enforces the unit coverage configuration. `make be-test-integration` starts only the disposable `db-test` Compose service on port `5434`, targets the `supplylens_test` database, and verifies a clean Alembic upgrade and downgrade. Run `make docker-test-stop` afterward. The development database on port `5433` is not used by the integration test.
+`make be-test` runs unit/API tests and enforces the unit coverage configuration. It does not start Docker services. Running plain `uv run pytest` from `apps/backend` uses pytest's configured default test path, `src`, where the co-located unit tests live; integration tests under `tests/integration` are not included by default.
+
+`make be-test-integration` runs tests marked `integration` from `tests/integration` and starts both disposable services: `db-test` on port `5434` and `minio-test` on port `9002`. The database test targets `supplylens_test` and verifies a clean Alembic upgrade and downgrade. Run both matching stop commands afterward. The development database and MinIO services are not used by these tests.
 
 Useful migration commands are:
 
@@ -79,10 +82,8 @@ apps/backend/
 |-- alembic/              # migration environment and revisions
 |-- src/supplylens/       # application package
 |-- tests/
-|   |-- unit/             # automated API and database tests
-|   |-- integration/      # isolated PostgreSQL migration test
+|   |-- integration/      # explicit PostgreSQL and MinIO integration tests
 |   `-- manual/           # VS Code REST Client checks
-|-- .env.example
 |-- alembic.ini
 `-- pyproject.toml
 ```

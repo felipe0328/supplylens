@@ -26,7 +26,7 @@ The repository is still an early scaffold; the architecture document describes i
 - `GET /api/v1/health/ready` checks PostgreSQL connectivity through the database session module and returns `503` when configuration or connectivity fails.
 - `supplylens.database.database` loads `DATABASE_URL` from the environment, creates the SQLAlchemy engine and session factory lazily, yields sessions, and runs the readiness query.
 - Alembic is configured under `apps/backend/alembic/` and reads the application database URL and `Base.metadata`. The initial revision is empty because no domain models exist yet; `supplylens/models/` is currently only a package placeholder.
-- `apps/backend/tests/unit/` contains automated FastAPI and database tests. `tests/integration/` contains a Docker-backed Alembic migration test, and `tests/manual/` contains VS Code REST Client health checks.
+- Unit and API tests are co-located with backend code under `apps/backend/src/`; `apps/backend/tests/integration/` contains Docker-backed PostgreSQL and MinIO integration tests, and `apps/backend/tests/manual/` contains VS Code REST Client health checks.
 - `apps/web/` is a React 19, TypeScript 6, and Vite 8 starter. It does not yet implement a SupplyLens product workflow.
 - `fixtures/` contains 12 generated, synthetic digital PDF scenarios and `expected.json` for future extraction, reconciliation, provenance, and validation tests.
 - `compose.yaml` runs PostgreSQL 17 with pgvector on host port `5433` for development and a disposable `supplylens_test` database on port `5434` under the `test` profile.
@@ -54,9 +54,9 @@ Run these from the repository root unless noted otherwise:
 - `make be`: run the FastAPI development server.
 - `make fe`: run the Vite development server.
 - `make be-lint`: run Ruff lint and formatting checks.
-- `make be-test`: run backend unit/API tests without PostgreSQL.
-- `make be-test-integration`: start the disposable test database and run the Alembic migration test.
-- `make docker-test-stop`: remove the disposable test database and its temporary data.
+- `make be-test`: run backend unit/API tests without Docker services.
+- `make be-test-integration`: start disposable PostgreSQL and MinIO services and run only integration tests.
+- `make docker-test-stop` and `make docker-test-storage-stop`: remove their corresponding disposable test services.
 - `make version-test`: run isolated standard-library tests for version automation.
 - `make check`: run backend syntax, lint, unit/API tests, version tests, and frontend lint/build checks.
 - `make db-revision MESSAGE="..."`: generate an Alembic revision.
@@ -67,7 +67,7 @@ Run these from the repository root unless noted otherwise:
 
 Equivalent direct commands include `uv sync --locked` and `uv run uvicorn supplylens.api:app --reload` from `apps/backend`, plus `npm ci`, `npm run dev`, `npm run lint`, and `npm run build` from `apps/web`.
 
-Copy `apps/backend/.env.example` to `apps/backend/.env` before commands that require `DATABASE_URL`. Never commit the resulting `.env` file.
+Copy the root `.env.example` to the root `.env` before commands that require `DATABASE_URL`. Never commit the resulting `.env` file.
 
 ## Coding Style and Naming Conventions
 
@@ -77,9 +77,10 @@ Money, quantities, validation, provenance, and policy calculations must remain d
 
 ## Testing Guidelines
 
-Add backend tests in `apps/backend/tests/` using `pytest` and frontend tests beside components or under `apps/web/src/__tests__/`. Name Python tests `test_*.py`; name frontend tests `*.test.ts` or `*.test.tsx`. Keep database integration tests marked `integration` so the unit coverage gate remains independent of Docker.
-
-Use only synthetic fixtures. Cover success, validation failure, provenance, database failure, immutable history, and the complete no-LLM behavior. Do not describe files under `apps/backend/tests/manual/` as automated coverage.
+- Follow the scoped [Python unit-testing instructions](.github/instructions/python-unit-testing.instructions.md) for backend unit tests.
+- Follow [apps/web/AGENTS.md](apps/web/AGENTS.md) for frontend conventions and tests.
+- Integration-test guidance will be defined separately; do not treat it as part of the Python unit-testing rules.
+- Use only synthetic fixtures, and do not describe manual checks as automated coverage.
 
 ## Commit and Pull Request Guidelines
 

@@ -4,7 +4,7 @@ These requests are for manual use in VS Code; they are not an automated test sui
 
 ## Setup
 
-1. From the repository root, follow the backend configuration steps in the main [README](../../../../README.md) to create `apps/backend/.env` and set `DATABASE_URL`.
+1. From the repository root, follow the backend configuration steps in the main [README](../../../../README.md) to create the root `.env` and set `DATABASE_URL`.
 2. Start the local database from the repository root:
 
    ```powershell

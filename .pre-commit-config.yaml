@@ -44,7 +44,6 @@ repos:
         language: system
         files: ^apps/backend/(src|tests)/.*\.py$
         pass_filenames: false
-        verbose: true
       - id: version-script-tests
         name: Version automation tests
         entry: python -m unittest discover -s .github/scripts -p test_*.py
