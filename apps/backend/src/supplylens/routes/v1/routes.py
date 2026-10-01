@@ -2,7 +2,10 @@ from fastapi import APIRouter, HTTPException, status
 
 from supplylens.database.database import health_check
 
+from .documents import documents_router
+
 router = APIRouter()
+router.include_router(documents_router)
 
 
 @router.get("/health/ready")
