@@ -4,32 +4,32 @@
 
 help: ## Show available commands
 	@echo "SupplyLens development commands:"
-	@echo "  make setup                         Install backend and frontend dependencies"
-	@echo "  make hooks                         Install pre-push quality checks"
-	@echo "  make hooks-uninstall               Remove the pre-push quality hook"
-	@echo "  make fe                            Run the React development server"
-	@echo "  make be                            Run the FastAPI development server"
-	@echo "  make be-check                      Check backend Python syntax"
-	@echo "  make be-lint                       Run Ruff lint and formatting checks"
-	@echo "  make be-test                       Run backend tests that do not require PostgreSQL"
-	@echo "  make be-test-integration           Run storage and database integration tests"
-	@echo "  make version-test                  Run version automation tests"
-	@echo "  make check                         Run backend and frontend checks"
-	@echo "  make db-revision msg=...           Create an autogenerate migration"
-	@echo "  make db-upgrade                    Apply all pending migrations"
-	@echo "  make db-downgrade                  Roll back one migration"
-	@echo "  make db-current                    Show the current migration revision"
-	@echo "  make db-history                    Show migration history"
-	@echo "  make db-check                      Check for model changes without a migration"
-	@echo "  make docker-start                  Start Docker Compose services"
-	@echo "  make docker-stop                   Stop and remove Docker Compose services"
-	@echo "  make docker-status                 Show Docker Compose service status"
-	@echo "  make docker-logs                   Follow Docker Compose logs"
-	@echo "  make docker-test-start             Start the disposable PostgreSQL test database"
-	@echo "  make docker-test-stop              Remove the disposable PostgreSQL test database"
-	@echo "  make docker-test-storage-start     Start disposable test MinIO"
-	@echo "  make docker-test-storage-stop      Remove disposable test MinIO"
-	@echo "  make pre-commit                    Run pre-commit checks on all files"
+	@echo "  make setup ....................... Install backend and frontend dependencies"
+	@echo "  make hooks ....................... Install pre-push quality checks"
+	@echo "  make hooks-uninstall ............. Remove the pre-push quality hook"
+	@echo "  make fe .......................... Run the React development server"
+	@echo "  make be .......................... Run the FastAPI development server"
+	@echo "  make be-check .................... Check backend Python syntax"
+	@echo "  make be-lint ..................... Run Ruff lint and formatting checks"
+	@echo "  make be-test ..................... Run backend tests that do not require PostgreSQL"
+	@echo "  make be-test-integration ......... Run storage and database integration tests"
+	@echo "  make version-test ................ Run version automation tests"
+	@echo "  make check ....................... Run backend and frontend checks"
+	@echo "  make db-revision msg=... ......... Create an autogenerate migration"
+	@echo "  make db-upgrade .................. Apply all pending migrations"
+	@echo "  make db-downgrade ................ Roll back one migration"
+	@echo "  make db-current .................. Show the current migration revision"
+	@echo "  make db-history .................. Show migration history"
+	@echo "  make db-check .................... Check for model changes without a migration"
+	@echo "  make docker-start ................ Start Docker Compose services"
+	@echo "  make docker-stop ................. Stop and remove Docker Compose services"
+	@echo "  make docker-status ............... Show Docker Compose service status"
+	@echo "  make docker-logs ................. Follow Docker Compose logs"
+	@echo "  make docker-test-start ........... Start the disposable PostgreSQL test database"
+	@echo "  make docker-test-stop ............ Remove the disposable PostgreSQL test database"
+	@echo "  make docker-test-storage-start ... Start disposable test MinIO"
+	@echo "  make docker-test-storage-stop .... Remove disposable test MinIO"
+	@echo "  make prec | precommit | pre-commit Run pre-commit checks on all files"
 
 hooks: ## Install the repository quality gate as a pre-push hook
 	pre-commit uninstall
@@ -120,5 +120,5 @@ docker-test-storage-start: ## Start the disposable MinIO test service
 docker-test-storage-stop: ## Remove the disposable MinIO test service
 	docker compose --profile test rm --stop --force minio-test
 
-pre-commit: ## Run precommit agains all files
+prec precommit pre-commit: ## Run precommit agains all files
 	pre-commit run --all-files
