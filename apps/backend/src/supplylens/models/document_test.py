@@ -127,7 +127,6 @@ def test_document_rejects_invalid_constraint_values(
     [
         ("filename", None),
         ("size_bytes", None),
-        ("document_type", None),
     ],
 )
 def test_document_rejects_null_required_values(

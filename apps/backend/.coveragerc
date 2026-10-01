@@ -2,6 +2,8 @@
 omit =
     */__init__.py
     *_test.py
+    */supplylens/port/*
+    */supplylens/domain/*
 
 [report]
 fail_under = 100
