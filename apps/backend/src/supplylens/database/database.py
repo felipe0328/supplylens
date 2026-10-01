@@ -38,6 +38,7 @@ def create_session() -> None:
 
 
 def get_session() -> Generator[Session, None, None]:
+    """Commit on successful completion, roll back on failure, and close the session."""
     if SessionLocal is None:
         create_session()
 
@@ -45,7 +46,7 @@ def get_session() -> Generator[Session, None, None]:
     if session_factory is None:
         raise RuntimeError("Database session factory was not initialized.")
 
-    with session_factory() as session:
+    with session_factory() as session, session.begin():
         yield session
 
 
