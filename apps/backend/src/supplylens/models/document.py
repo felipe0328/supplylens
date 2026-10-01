@@ -11,7 +11,7 @@ from supplylens.domain.documents import DocumentProcessingStatus, DocumentUpload
 class Document(Base):
     __tablename__ = "documents"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
 
     filename: Mapped[str]
     size_bytes: Mapped[int]
