@@ -232,7 +232,7 @@ The workspace ID in the key is defense in depth, not an authorization check. The
 If a provider requires a different key format, preserve both workspace and document identity in its equivalent namespace:
 
 ```text
-tenants/{tenant_id}/documents/{document_id}/original.pdf
+workspaces/{workspace_id}/documents/{document_id}/original.pdf
 ```
 
 The database, not the object key, is the authoritative source for the original filename.
@@ -1319,13 +1319,13 @@ This prevents malformed or mislabeled files from entering the extraction pipelin
 Never overwrite:
 
 ```text
-documents/{document_id}/original.pdf
+workspaces/{workspace_id}/documents/{document_id}/original.pdf
 ```
 
-If OCR or PDF optimization is introduced later, create a derived object:
+If OCR or PDF optimization is introduced later, create a derived object under the same workspace and document prefix:
 
 ```text
-documents/{document_id}/derived/ocr.pdf
+workspaces/{workspace_id}/documents/{document_id}/derived/ocr.pdf
 ```
 
 Processing should always be reproducible from the original source.
