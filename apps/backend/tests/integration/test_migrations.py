@@ -76,3 +76,51 @@ def test_migrations_upgrade_and_downgrade_clean_postgres(
         assert revision is None
     finally:
         engine.dispose()
+
+
+@pytest.mark.integration
+def test_filename_constraint_migration_repairs_existing_blank_filenames(
+    clean_test_database: URL,
+) -> None:
+    config = Config(str(BACKEND_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
+    command.upgrade(config, "178db1cb8a7c")
+
+    document_id = "00000000-0000-0000-0000-000000000001"
+    engine = create_engine(clean_test_database)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO documents (
+                        id,
+                        filename,
+                        size_bytes,
+                        upload_status,
+                        processing_status
+                    ) VALUES (
+                        CAST(:document_id AS UUID),
+                        '   ',
+                        128,
+                        'PENDING',
+                        'PENDING'
+                    )
+                    """
+                ),
+                {"document_id": document_id},
+            )
+
+        command.upgrade(config, "head")
+
+        with engine.connect() as connection:
+            filename = connection.execute(
+                text(
+                    "SELECT filename FROM documents "
+                    "WHERE id = CAST(:document_id AS UUID)"
+                ),
+                {"document_id": document_id},
+            ).scalar_one()
+        assert filename == f"document-{document_id}.pdf"
+    finally:
+        engine.dispose()
