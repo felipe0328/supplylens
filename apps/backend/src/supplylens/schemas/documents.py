@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt
+from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt, field_validator
 
 from supplylens.domain.documents import DocumentProcessingStatus, DocumentUploadStatus
 
@@ -25,6 +25,14 @@ class CreateUploadIntentRequest(BaseModel):
         ),
         examples=[245760],
     )
+
+    @field_validator("filename")
+    @classmethod
+    def normalize_filename(cls, filename: str) -> str:
+        normalized = filename.strip()
+        if not normalized:
+            raise ValueError("filename must not be blank")
+        return normalized
 
 
 class CreateUploadIntentResponse(BaseModel):

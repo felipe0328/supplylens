@@ -11,9 +11,10 @@ def delete_document(
 ) -> None:
     object_key = create_object_key(id)
 
+    persistence.delete_document(id)
+    persistence.commit()
+
     try:
         storage.delete_object(object_key)
     except ObjectNotFoundError:
         pass  # Already deleted, or never uploaded.
-
-    persistence.delete_document(id)

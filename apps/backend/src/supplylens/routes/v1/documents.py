@@ -97,6 +97,14 @@ def _document_http_error(error: Exception) -> HTTPException:
     raise TypeError(f"No HTTP mapping for {type(error).__name__}")
 
 
+def _create_storage_adapter() -> StorageAdapter:
+    try:
+        return StorageAdapter()
+    except ValueError as exc:
+        unavailable = StorageUnavailableError("Invalid object storage configuration.")
+        raise _document_http_error(unavailable) from exc
+
+
 @documents_router.post(
     "/uploads",
     status_code=status.HTTP_201_CREATED,
@@ -127,7 +135,7 @@ def create_upload_intent(
     session: Annotated[Session, Depends(get_session, scope="function")],
 ) -> CreateUploadIntentResponse:
     persistence = DocumentPersistenceAdapter(session=session)
-    storage = StorageAdapter()
+    storage = _create_storage_adapter()
 
     try:
         upload_intent_response: CreateUploadIntentCommandResult = (
@@ -196,7 +204,7 @@ def report_upload_completed(
     session: Annotated[Session, Depends(get_session, scope="function")],
 ) -> ReportUploadCompletedResponse:
     persistence = DocumentPersistenceAdapter(session=session)
-    storage = StorageAdapter()
+    storage = _create_storage_adapter()
     try:
         upload_completed: ReportUploadCompletedCommandResponse = (
             report_upload_completed_controller(
@@ -265,7 +273,7 @@ def get_document_url(
     id: UUID, session: Annotated[Session, Depends(get_session, scope="function")]
 ) -> GetDocumentURLResponse:
     persistence = DocumentPersistenceAdapter(session=session)
-    storage = StorageAdapter()
+    storage = _create_storage_adapter()
     try:
         document_url: GetDocumentURLCommandResponse = get_document_url_controller(
             id=id, persistence=persistence, storage=storage
@@ -298,7 +306,7 @@ def delete_document(
     id: UUID, session: Annotated[Session, Depends(get_session, scope="function")]
 ) -> None:
     persistence = DocumentPersistenceAdapter(session=session)
-    storage = StorageAdapter()
+    storage = _create_storage_adapter()
     try:
         delete_document_controller(id=id, persistence=persistence, storage=storage)
     except StorageUnavailableError as exc:
