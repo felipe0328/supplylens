@@ -1,3 +1,5 @@
+from importlib.metadata import version
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -6,6 +8,10 @@ from supplylens.config import AppEnvironment
 from supplylens.routes.v1 import routes
 
 client = TestClient(app)
+
+
+def test_app_reports_installed_package_version() -> None:
+    assert app.version == version("supplylens")
 
 
 @pytest.mark.parametrize(

@@ -1,3 +1,5 @@
+from importlib.metadata import version
+
 from fastapi import FastAPI
 
 from supplylens.config import AppEnvironment, get_app_environment
@@ -20,7 +22,7 @@ def create_app(environment: AppEnvironment | None = None) -> FastAPI:
             "then report completion before requesting a download URL. The health "
             "routes expose process liveness and database readiness."
         ),
-        version="0.4.0",
+        version=version("supplylens"),
         openapi_tags=[
             {
                 "name": "Documents",

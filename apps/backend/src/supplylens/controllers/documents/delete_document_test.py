@@ -31,6 +31,17 @@ def test_delete_document_still_deletes_record_when_storage_object_is_missing() -
     persistence.delete_document.assert_called_once_with(DOCUMENT_ID)
 
 
+def test_delete_document_does_not_access_storage_when_record_is_missing() -> None:
+    storage = Mock(spec=ObjectStorage)
+    persistence = Mock(spec=DocumentPersistence)
+    persistence.get_document_data.return_value = None
+
+    delete_document(storage, persistence, DOCUMENT_ID)
+
+    storage.delete_object.assert_not_called()
+    persistence.delete_document.assert_not_called()
+
+
 def test_delete_document_does_not_delete_record_when_storage_delete_fails() -> None:
     storage = Mock(spec=ObjectStorage)
     persistence = Mock(spec=DocumentPersistence)

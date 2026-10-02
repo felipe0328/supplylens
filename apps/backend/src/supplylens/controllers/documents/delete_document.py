@@ -9,6 +9,9 @@ from .helpers import create_object_key
 def delete_document(
     storage: ObjectStorage, persistence: DocumentPersistence, id: UUID
 ) -> None:
+    if persistence.get_document_data(id) is None:
+        return
+
     object_key = create_object_key(id)
 
     try:
