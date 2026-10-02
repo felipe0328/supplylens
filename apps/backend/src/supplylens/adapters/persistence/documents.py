@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from supplylens.domain.documents import DocumentUploadStatus
@@ -52,6 +53,11 @@ class DocumentPersistenceAdapter(DocumentPersistence):
         if document is None:
             raise ValueError(f"Document with ID {id} not found")
         document.upload_status = new_status
+        if (
+            new_status == DocumentUploadStatus.UPLOADED
+            and document.upload_status != DocumentUploadStatus.UPLOADED
+        ):
+            document.uploaded_at = func.now()
         self._session.flush()
         return map_model_to_abstraction(document)
 

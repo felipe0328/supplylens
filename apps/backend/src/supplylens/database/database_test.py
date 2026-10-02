@@ -57,7 +57,7 @@ def test_create_session_builds_lazy_engine_and_factory(
     monkeypatch.setattr(database, "create_engine", create_engine)
     monkeypatch.setattr(database, "sessionmaker", sessionmaker)
 
-    database.create_session()
+    database.__create_session()
 
     create_engine.assert_called_once_with("postgresql://example")
     sessionmaker.assert_called_once_with(
@@ -78,7 +78,7 @@ def test_create_session_preserves_configuration_errors(
     monkeypatch.setattr(database, "get_database_url", fail_to_get_url)
 
     with pytest.raises(ValueError, match="missing URL"):
-        database.create_session()
+        database.__create_session()
 
 
 def test_get_session_creates_factory_lazily(
@@ -95,7 +95,7 @@ def test_get_session_creates_factory_lazily(
     monkeypatch.setattr(database, "SessionLocal", None)
     monkeypatch.setattr(database, "create_session", create_session)
 
-    assert list(database.get_session()) == [session]
+    assert list(database.get_session_maker()) == [session]
     factory.assert_called_once_with()
     session_context.__exit__.assert_called_once()
     session.begin.assert_called_once_with()
@@ -109,7 +109,7 @@ def test_get_session_rejects_uninitialized_factory(
     monkeypatch.setattr(database, "create_session", lambda: None)
 
     with pytest.raises(RuntimeError, match="factory was not initialized"):
-        next(database.get_session())
+        next(database.get_session_maker())
 
 
 def test_health_check_executes_readiness_query(
@@ -200,7 +200,7 @@ def test_get_session_commits_document_operations_on_success(
 ) -> None:
     document_id = uuid4()
 
-    with contextmanager(database.get_session)() as session:
+    with contextmanager(database.get_session_maker)() as session:
         adapter = DocumentPersistenceAdapter(session)
         adapter.create_new_document(document_id, "invoice.pdf", 128)
         adapter.update_document_upload_status(
@@ -219,7 +219,7 @@ def test_get_session_rolls_back_document_operations_on_failure(
     document_id = uuid4()
 
     with pytest.raises(RuntimeError, match="operation failed"):
-        with contextmanager(database.get_session)() as session:
+        with contextmanager(database.get_session_maker)() as session:
             DocumentPersistenceAdapter(session).create_new_document(
                 document_id, "invoice.pdf", 128
             )
@@ -236,7 +236,7 @@ def test_get_session_rolls_back_when_commit_fails(
     invalid_document_id = uuid4()
 
     with pytest.raises(IntegrityError):
-        with contextmanager(database.get_session)() as session:
+        with contextmanager(database.get_session_maker)() as session:
             DocumentPersistenceAdapter(session).create_new_document(
                 document_id, "invoice.pdf", 128
             )
@@ -251,7 +251,7 @@ def test_get_session_rolls_back_when_generator_is_closed(
     transaction_engine: Engine,
 ) -> None:
     document_id = uuid4()
-    dependency = database.get_session()
+    dependency = database.get_session_maker()
     session = next(dependency)
     DocumentPersistenceAdapter(session).create_new_document(
         document_id, "invoice.pdf", 128

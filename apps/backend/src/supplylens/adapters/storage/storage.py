@@ -20,6 +20,7 @@ from supplylens.port.storage.storage import (
     ObjectStorage,
     PresignedURL,
     StorageUnavailableError,
+    UploadTooLargeError,
 )
 
 if TYPE_CHECKING:
@@ -93,7 +94,7 @@ class StorageAdapter(ObjectStorage):
         if type(size_bytes) is not int or size_bytes <= 0:
             raise ValueError("size_bytes must be a positive integer.")
         if size_bytes > self._settings.max_document_size_bytes:
-            raise ValueError(
+            raise UploadTooLargeError(
                 "Upload exceeds MAX_DOCUMENT_SIZE_BYTES "
                 f"({self._settings.max_document_size_bytes} bytes)."
             )

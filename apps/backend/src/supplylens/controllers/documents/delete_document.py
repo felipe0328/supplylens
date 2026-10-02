@@ -7,13 +7,13 @@ from .helpers import create_object_key
 
 
 def delete_document(
-    storage: ObjectStorage, persistence: DocumentPersistence, document_id: UUID
+    storage: ObjectStorage, persistence: DocumentPersistence, id: UUID
 ) -> None:
-    object_key = create_object_key(document_id)
+    object_key = create_object_key(id)
 
     try:
         storage.delete_object(object_key)
     except ObjectNotFoundError:
         pass  # Already deleted, or never uploaded.
 
-    persistence.delete_document(document_id)
+    persistence.delete_document(id)

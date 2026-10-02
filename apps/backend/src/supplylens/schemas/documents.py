@@ -18,10 +18,6 @@ class CreateUploadIntentResponse(BaseModel):
     upload: UploadInstructions
 
 
-class ReportUploadCompletedRequest(BaseModel):
-    client_etag: str | None = None
-
-
 class ReportUploadCompletedResponse(BaseModel):
     document: Document
 

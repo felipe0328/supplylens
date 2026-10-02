@@ -17,7 +17,7 @@ class CreateUploadIntentCommand:
 
 @dataclass(frozen=True)
 class CreateUploadIntentCommandResult:
-    document_id: UUID
+    id: UUID
     upload: UploadInstructions
 
 
@@ -55,7 +55,7 @@ def create_upload_intent(
         )
 
     return CreateUploadIntentCommandResult(
-        document_id=new_uuid,
+        id=new_uuid,
         upload=UploadInstructions(
             url=upload_url.url,
             method=upload_url.method,

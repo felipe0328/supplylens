@@ -20,34 +20,36 @@ class ReportUploadCompletedCommandResponse:
 
 
 def report_upload_completed(
-    storage: ObjectStorage, persistence: DocumentPersistence, document_id: UUID
+    storage: ObjectStorage,
+    persistence: DocumentPersistence,
+    id: UUID,
 ) -> ReportUploadCompletedCommandResponse:
 
     try:
-        stored_document = storage.head_object(create_object_key(document_id))
+        stored_document = storage.head_object(create_object_key(id))
     except ObjectNotFoundError:
         raise DocumentNotFoundError(
-            f"Document with ID {document_id} not found in object storage"
+            f"Document with ID {id} not found in object storage"
         )
 
-    persistence_document = persistence.get_document_data(document_id)
+    persistence_document = persistence.get_document_data(id)
     if persistence_document is None:
         raise DocumentNotFoundError(
-            f"Document with ID {document_id} not found in object storage"
+            f"Document with ID {id} not found in object storage"
         )
 
     if stored_document.size_bytes != persistence_document.size_bytes:
         raise StoreDocumentInvalidSizeError(
-            f"Document with ID {document_id} has inconsistent size information"
+            f"Document with ID {id} has inconsistent size information"
         )
 
     if stored_document.content_type != "application/pdf":
         raise DocumentInvalidContentTypeError(
-            f"Document with ID {document_id} has invalid content type: {stored_document.content_type}"  # noqa: E501
+            f"Document with ID {id} has invalid content type: {stored_document.content_type}"  # noqa: E501
         )
 
     document = persistence.update_document_upload_status(
-        id=document_id, new_status=DocumentUploadStatus.UPLOADED
+        id=id, new_status=DocumentUploadStatus.UPLOADED
     )
     return ReportUploadCompletedCommandResponse(
         document=Document(

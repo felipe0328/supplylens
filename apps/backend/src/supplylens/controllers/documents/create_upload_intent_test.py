@@ -58,7 +58,7 @@ def test_create_upload_intent_requests_upload_and_persists_document() -> None:
     persistence.create_new_document.assert_called_once_with(
         id=DOCUMENT_ID, filename="invoice.pdf", size_bytes=512
     )
-    assert result.document_id == DOCUMENT_ID
+    assert result.id == DOCUMENT_ID
     assert result.upload.url == "https://storage.invalid/upload"
     assert result.upload.method == "PUT"
     assert result.upload.headers == {"Content-Type": "application/pdf"}
