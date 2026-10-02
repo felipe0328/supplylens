@@ -30,9 +30,10 @@ class Document(Base):
     )
     uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
-        CheckConstraint("filename <> ''", name="ck_document_filename_not_empty"),
+        CheckConstraint("trim(filename) <> ''", name="ck_document_filename_not_empty"),
         CheckConstraint("size_bytes >= 0", name="ck_document_size_bytes_positive"),
         CheckConstraint("document_type <> ''", name="ck_document_type_not_empty"),
         CheckConstraint("page_count >= 0", name="ck_document_page_count_positive"),

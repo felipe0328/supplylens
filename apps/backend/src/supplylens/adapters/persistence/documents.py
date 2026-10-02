@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from supplylens.domain.documents import DocumentUploadStatus
@@ -37,11 +37,16 @@ class DocumentPersistenceAdapter(DocumentPersistence):
     def delete_document(self, id: UUID) -> None:
         document = self._session.get(DocumentModel, id)
         if document is not None:
-            self._session.delete(document)
+            document.deleted_at = func.now()
             self._session.flush()
 
     def get_document_data(self, id: UUID) -> AbstractDocument | None:
-        document = self._session.get(DocumentModel, id)
+        document = self._session.scalar(
+            select(DocumentModel).where(
+                DocumentModel.id == id,
+                DocumentModel.deleted_at.is_(None),
+            )
+        )
         if document is not None:
             return map_model_to_abstraction(document)
         return None

@@ -1,3 +1,5 @@
+from importlib.metadata import version
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -38,6 +40,10 @@ def test_app_environment_rejects_unknown_values(
 def test_create_app_can_be_configured_explicitly() -> None:
     assert create_app(AppEnvironment.DEVELOPMENT).debug is True
     assert create_app(AppEnvironment.PRODUCTION).debug is False
+
+
+def test_app_version_matches_package_version() -> None:
+    assert create_app(AppEnvironment.TESTING).version == version("supplylens")
 
 
 def test_create_app_registers_health_routes(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -76,6 +76,44 @@ def test_create_upload_intent_returns_created(
     }
 
 
+def test_create_upload_intent_normalizes_filename(
+    upload_client: tuple[TestClient, Mock],
+) -> None:
+    client, controller = upload_client
+    controller.return_value = CreateUploadIntentCommandResult(
+        id=DOCUMENT_ID,
+        upload=UploadInstructions(
+            url="https://storage.invalid/upload",
+            method="PUT",
+            headers={"Content-Type": "application/pdf"},
+            expires_in_seconds=900,
+        ),
+    )
+
+    response = client.post(
+        "/api/v1/documents/uploads",
+        json={**UPLOAD_REQUEST, "filename": "  invoice.pdf  "},
+    )
+
+    assert response.status_code == 201
+    assert controller.call_args.kwargs["req"].filename == "invoice.pdf"
+
+
+@pytest.mark.parametrize("filename", [" ", "\t", "\n"])
+def test_create_upload_intent_rejects_blank_filename(
+    upload_client: tuple[TestClient, Mock], filename: str
+) -> None:
+    client, controller = upload_client
+
+    response = client.post(
+        "/api/v1/documents/uploads",
+        json={**UPLOAD_REQUEST, "filename": filename},
+    )
+
+    assert response.status_code == 422
+    controller.assert_not_called()
+
+
 @pytest.mark.parametrize(
     ("error", "expected_status", "expected_detail"),
     [
@@ -114,6 +152,38 @@ def test_create_upload_intent_does_not_treat_configuration_errors_as_client_erro
 
     with pytest.raises(ValueError, match="invalid storage configuration"):
         client.post("/api/v1/documents/uploads", json=UPLOAD_REQUEST)
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("post", "/api/v1/documents/uploads"),
+        ("post", f"/api/v1/documents/{DOCUMENT_ID}/complete"),
+        ("post", f"/api/v1/documents/{DOCUMENT_ID}/download-url"),
+        ("delete", f"/api/v1/documents/{DOCUMENT_ID}"),
+    ],
+)
+def test_storage_configuration_errors_return_service_unavailable(
+    upload_client: tuple[TestClient, Mock],
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    path: str,
+) -> None:
+    client, _ = upload_client
+    monkeypatch.setattr(
+        documents,
+        "StorageAdapter",
+        Mock(side_effect=ValueError("invalid storage configuration")),
+    )
+
+    response = client.request(
+        method,
+        path,
+        json=UPLOAD_REQUEST if path.endswith("/uploads") else None,
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Object storage is unavailable."}
 
 
 @pytest.fixture

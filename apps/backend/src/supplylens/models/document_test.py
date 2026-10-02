@@ -42,6 +42,7 @@ def test_document_defaults_and_nullable_fields(session: Session) -> None:
     assert document.page_count is None
     assert document.uploaded_at is None
     assert document.processed_at is None
+    assert document.deleted_at is None
 
 
 def test_document_defaults_apply_when_defaulted_fields_are_none(
@@ -99,6 +100,7 @@ def test_document_persists_statuses_and_optional_values(
     ("field_name", "invalid_value"),
     [
         ("filename", ""),
+        ("filename", "   "),
         ("size_bytes", -1),
         ("document_type", ""),
         ("page_count", -1),

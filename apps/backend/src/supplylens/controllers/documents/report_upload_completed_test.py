@@ -118,4 +118,8 @@ def test_report_upload_completed_rejects_invalid_storage_metadata(
     with pytest.raises(expected_error):
         report_upload_completed(storage, persistence, DOCUMENT_ID)
 
-    persistence.update_document_upload_status.assert_not_called()
+    persistence.update_document_upload_status.assert_called_once_with(
+        id=DOCUMENT_ID, new_status=DocumentUploadStatus.FAILED
+    )
+    persistence.commit.assert_not_called()
+    storage.delete_object.assert_called_once_with(OBJECT_KEY)
