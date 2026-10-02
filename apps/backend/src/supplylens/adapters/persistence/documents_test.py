@@ -81,6 +81,35 @@ def test_update_returns_new_status_and_can_be_rolled_back(session: Session) -> N
     )
 
 
+def test_first_uploaded_transition_sets_uploaded_at(session: Session) -> None:
+    document_id = uuid4()
+    adapter = DocumentPersistenceAdapter(session)
+    adapter.create_new_document(document_id, "invoice.pdf", 128)
+    adapter.commit()
+
+    updated_document = adapter.update_document_upload_status(
+        document_id, DocumentUploadStatus.UPLOADED
+    )
+
+    assert updated_document.uploaded_at is not None
+
+
+def test_repeated_uploaded_transition_preserves_uploaded_at(session: Session) -> None:
+    document_id = uuid4()
+    adapter = DocumentPersistenceAdapter(session)
+    adapter.create_new_document(document_id, "invoice.pdf", 128)
+    first_update = adapter.update_document_upload_status(
+        document_id, DocumentUploadStatus.UPLOADED
+    )
+    original_uploaded_at = first_update.uploaded_at
+
+    second_update = adapter.update_document_upload_status(
+        document_id, DocumentUploadStatus.UPLOADED
+    )
+
+    assert second_update.uploaded_at == original_uploaded_at
+
+
 def test_delete_flushes_and_can_be_rolled_back(session: Session) -> None:
     document_id = uuid4()
     adapter = DocumentPersistenceAdapter(session)
@@ -234,6 +263,7 @@ def test_committed_update_persists_status_and_preserves_document_data(
     assert updated_document.filename == created_document.filename
     assert updated_document.size_bytes == created_document.size_bytes
     assert updated_document.created_at == created_document.created_at
+    assert updated_document.uploaded_at is None
     assert updated_document.processing_status is DocumentProcessingStatus.PENDING
     with Session(session.get_bind()) as verification_session:
         persisted_document = DocumentPersistenceAdapter(

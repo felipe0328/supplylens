@@ -93,9 +93,9 @@ def test_get_session_creates_factory_lazily(
         database.SessionLocal = factory
 
     monkeypatch.setattr(database, "SessionLocal", None)
-    monkeypatch.setattr(database, "create_session", create_session)
+    monkeypatch.setattr(database, "__create_session", create_session)
 
-    assert list(database.get_session_maker()) == [session]
+    assert list(database.get_session()) == [session]
     factory.assert_called_once_with()
     session_context.__exit__.assert_called_once()
     session.begin.assert_called_once_with()
@@ -106,10 +106,10 @@ def test_get_session_rejects_uninitialized_factory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(database, "SessionLocal", None)
-    monkeypatch.setattr(database, "create_session", lambda: None)
+    monkeypatch.setattr(database, "__create_session", lambda: None)
 
     with pytest.raises(RuntimeError, match="factory was not initialized"):
-        next(database.get_session_maker())
+        next(database.get_session())
 
 
 def test_health_check_executes_readiness_query(
@@ -141,7 +141,7 @@ def test_health_check_creates_engine_lazily(
         database.SessionEngine = engine
 
     monkeypatch.setattr(database, "SessionEngine", None)
-    monkeypatch.setattr(database, "create_session", create_session)
+    monkeypatch.setattr(database, "__create_session", create_session)
 
     assert database.health_check() is True
 
@@ -153,7 +153,7 @@ def test_health_check_preserves_configuration_errors(
         raise ValueError("missing URL")
 
     monkeypatch.setattr(database, "SessionEngine", None)
-    monkeypatch.setattr(database, "create_session", create_session)
+    monkeypatch.setattr(database, "__create_session", create_session)
 
     with pytest.raises(ValueError, match="missing URL"):
         database.health_check()
@@ -174,7 +174,7 @@ def test_health_check_rejects_uninitialized_engine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(database, "SessionEngine", None)
-    monkeypatch.setattr(database, "create_session", lambda: None)
+    monkeypatch.setattr(database, "__create_session", lambda: None)
 
     with pytest.raises(RuntimeError, match="Database health check failed"):
         database.health_check()
@@ -200,7 +200,7 @@ def test_get_session_commits_document_operations_on_success(
 ) -> None:
     document_id = uuid4()
 
-    with contextmanager(database.get_session_maker)() as session:
+    with contextmanager(database.get_session)() as session:
         adapter = DocumentPersistenceAdapter(session)
         adapter.create_new_document(document_id, "invoice.pdf", 128)
         adapter.update_document_upload_status(
@@ -219,7 +219,7 @@ def test_get_session_rolls_back_document_operations_on_failure(
     document_id = uuid4()
 
     with pytest.raises(RuntimeError, match="operation failed"):
-        with contextmanager(database.get_session_maker)() as session:
+        with contextmanager(database.get_session)() as session:
             DocumentPersistenceAdapter(session).create_new_document(
                 document_id, "invoice.pdf", 128
             )
@@ -236,7 +236,7 @@ def test_get_session_rolls_back_when_commit_fails(
     invalid_document_id = uuid4()
 
     with pytest.raises(IntegrityError):
-        with contextmanager(database.get_session_maker)() as session:
+        with contextmanager(database.get_session)() as session:
             DocumentPersistenceAdapter(session).create_new_document(
                 document_id, "invoice.pdf", 128
             )
@@ -251,7 +251,7 @@ def test_get_session_rolls_back_when_generator_is_closed(
     transaction_engine: Engine,
 ) -> None:
     document_id = uuid4()
-    dependency = database.get_session_maker()
+    dependency = database.get_session()
     session = next(dependency)
     DocumentPersistenceAdapter(session).create_new_document(
         document_id, "invoice.pdf", 128

@@ -52,10 +52,11 @@ class DocumentPersistenceAdapter(DocumentPersistence):
         document = self._session.get(DocumentModel, id)
         if document is None:
             raise ValueError(f"Document with ID {id} not found")
+        previous_status = document.upload_status
         document.upload_status = new_status
         if (
             new_status == DocumentUploadStatus.UPLOADED
-            and document.upload_status != DocumentUploadStatus.UPLOADED
+            and previous_status != DocumentUploadStatus.UPLOADED
         ):
             document.uploaded_at = func.now()
         self._session.flush()

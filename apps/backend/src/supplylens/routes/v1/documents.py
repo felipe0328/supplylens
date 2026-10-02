@@ -40,6 +40,7 @@ from supplylens.controllers.documents.exceptions import (
 ## Schemas Imports
 from supplylens.database.database import get_session
 from supplylens.port.storage.storage import StorageUnavailableError, UploadTooLargeError
+from supplylens.schemas.common import ErrorResponse
 from supplylens.schemas.documents import (
     CreateUploadIntentRequest,
     CreateUploadIntentResponse,
@@ -52,6 +53,16 @@ from supplylens.schemas.documents import (
 from .mappers import map_controller_document_to_schema_document
 
 documents_router = APIRouter(prefix="/documents", tags=["Documents"])
+
+_STORAGE_UNAVAILABLE_RESPONSE = {
+    status.HTTP_503_SERVICE_UNAVAILABLE: {
+        "model": ErrorResponse,
+        "description": "Object storage is unavailable.",
+    }
+}
+_VALIDATION_ERROR_SCHEMA = {
+    "$ref": "#/components/schemas/HTTPValidationError"
+}
 
 
 def _document_http_error(error: Exception) -> HTTPException:
@@ -88,7 +99,33 @@ def _document_http_error(error: Exception) -> HTTPException:
     raise TypeError(f"No HTTP mapping for {type(error).__name__}")
 
 
-@documents_router.post("/uploads", status_code=status.HTTP_201_CREATED)
+@documents_router.post(
+    "/uploads",
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a PDF upload intent",
+    description=(
+        "Creates a pending document record and returns a short-lived object storage "
+        "URL. Send the PDF bytes to that URL using the returned HTTP method and "
+        "headers, then call the upload completion endpoint with the returned ID. "
+        "Only PDF files within the configured maximum size are accepted."
+    ),
+    responses={
+        **_STORAGE_UNAVAILABLE_RESPONSE,
+        status.HTTP_413_CONTENT_TOO_LARGE: {
+            "model": ErrorResponse,
+            "description": "The declared file size exceeds the configured limit.",
+        },
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": (
+                "The request body is invalid, including an unsupported content "
+                "type or invalid size."
+            ),
+            "content": {
+                "application/json": {"schema": _VALIDATION_ERROR_SCHEMA}
+            },
+        },
+    },
+)
 def create_upload_intent(
     req: CreateUploadIntentRequest,
     session: Annotated[Session, Depends(get_session, scope="function")],
@@ -122,7 +159,42 @@ def create_upload_intent(
     )
 
 
-@documents_router.post("/{id}/complete")
+@documents_router.post(
+    "/{id}/complete",
+    summary="Verify completion of a PDF upload",
+    description=(
+        "Verifies that the PDF exists in object storage and matches the declared "
+        "size and media type, then marks the document as uploaded. A size mismatch "
+        "returns 422 Unprocessable Entity."
+    ),
+    responses={
+        **_STORAGE_UNAVAILABLE_RESPONSE,
+        status.HTTP_404_NOT_FOUND: {
+            "model": ErrorResponse,
+            "description": "The document or uploaded object was not found.",
+        },
+        status.HTTP_415_UNSUPPORTED_MEDIA_TYPE: {
+            "model": ErrorResponse,
+            "description": "The stored object is not a PDF.",
+        },
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": (
+                "The upload size does not match the declared size, or the request "
+                "path is invalid."
+            ),
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "oneOf": [
+                            {"$ref": "#/components/schemas/ErrorResponse"},
+                            _VALIDATION_ERROR_SCHEMA,
+                        ]
+                    }
+                }
+            },
+        },
+    },
+)
 def report_upload_completed(
     id: UUID,
     session: Annotated[Session, Depends(get_session, scope="function")],
@@ -147,7 +219,17 @@ def report_upload_completed(
     )
 
 
-@documents_router.get("/{id}")
+@documents_router.get(
+    "/{id}",
+    summary="Get document metadata",
+    description="Returns document metadata and its upload and processing states.",
+    responses={
+        status.HTTP_404_NOT_FOUND: {
+            "model": ErrorResponse,
+            "description": "The document was not found.",
+        }
+    },
+)
 def get_document_data(
     id: UUID, session: Annotated[Session, Depends(get_session, scope="function")]
 ) -> GetDocumentDataResponse:
@@ -164,7 +246,25 @@ def get_document_data(
     )
 
 
-@documents_router.post("/{id}/download-url")
+@documents_router.post(
+    "/{id}/download-url",
+    summary="Create a PDF download URL",
+    description=(
+        "Returns a short-lived URL for downloading an uploaded PDF. The document "
+        "must exist and its upload must have been completed."
+    ),
+    responses={
+        **_STORAGE_UNAVAILABLE_RESPONSE,
+        status.HTTP_404_NOT_FOUND: {
+            "model": ErrorResponse,
+            "description": "The document was not found.",
+        },
+        status.HTTP_409_CONFLICT: {
+            "model": ErrorResponse,
+            "description": "The document has not been uploaded yet.",
+        },
+    },
+)
 def get_document_url(
     id: UUID, session: Annotated[Session, Depends(get_session, scope="function")]
 ) -> GetDocumentURLResponse:
@@ -188,7 +288,15 @@ def get_document_url(
 
 
 @documents_router.delete(
-    "/{id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response
+    "/{id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    summary="Delete a document",
+    description=(
+        "Deletes the document record and its stored PDF, if present. Returns no "
+        "content after deletion."
+    ),
+    responses=_STORAGE_UNAVAILABLE_RESPONSE,
 )
 def delete_document(
     id: UUID, session: Annotated[Session, Depends(get_session, scope="function")]
