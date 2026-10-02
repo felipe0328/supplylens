@@ -70,26 +70,25 @@ def test_report_upload_completed_validates_object_and_updates_status() -> None:
 def test_report_upload_completed_raises_when_object_is_missing() -> None:
     storage = Mock(spec=ObjectStorage)
     persistence = Mock(spec=DocumentPersistence)
+    persistence.get_document_data.return_value = _document()
     storage.head_object.side_effect = ObjectNotFoundError("not uploaded")
 
     with pytest.raises(DocumentNotFoundError, match="object storage"):
         report_upload_completed(storage, persistence, DOCUMENT_ID)
 
-    persistence.get_document_data.assert_not_called()
+    persistence.get_document_data.assert_called_once_with(DOCUMENT_ID)
     persistence.update_document_upload_status.assert_not_called()
 
 
 def test_report_upload_completed_raises_when_persistence_record_is_missing() -> None:
     storage = Mock(spec=ObjectStorage)
     persistence = Mock(spec=DocumentPersistence)
-    storage.head_object.return_value = ObjectInfo(
-        OBJECT_KEY, 512, "application/pdf", None
-    )
     persistence.get_document_data.return_value = None
 
-    with pytest.raises(DocumentNotFoundError, match="object storage"):
+    with pytest.raises(DocumentNotFoundError, match=str(DOCUMENT_ID)):
         report_upload_completed(storage, persistence, DOCUMENT_ID)
 
+    storage.head_object.assert_not_called()
     persistence.update_document_upload_status.assert_not_called()
 
 

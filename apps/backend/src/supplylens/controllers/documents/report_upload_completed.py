@@ -24,16 +24,13 @@ def report_upload_completed(
     persistence: DocumentPersistence,
     id: UUID,
 ) -> ReportUploadCompletedCommandResponse:
+    persistence_document = persistence.get_document_data(id)
+    if persistence_document is None:
+        raise DocumentNotFoundError(f"Document with ID {id} not found")
 
     try:
         stored_document = storage.head_object(create_object_key(id))
     except ObjectNotFoundError:
-        raise DocumentNotFoundError(
-            f"Document with ID {id} not found in object storage"
-        )
-
-    persistence_document = persistence.get_document_data(id)
-    if persistence_document is None:
         raise DocumentNotFoundError(
             f"Document with ID {id} not found in object storage"
         )

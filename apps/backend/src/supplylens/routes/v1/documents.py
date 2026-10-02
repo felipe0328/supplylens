@@ -76,7 +76,7 @@ def _document_http_error(error: Exception) -> HTTPException:
         )
     if isinstance(error, StoreDocumentInvalidSizeError):
         return HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Uploaded document size does not match the declared size.",
         )
     if isinstance(error, DocumentInvalidContentTypeError):
@@ -113,7 +113,7 @@ def _document_http_error(error: Exception) -> HTTPException:
             "model": ErrorResponse,
             "description": "The declared file size exceeds the configured limit.",
         },
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "description": (
                 "The request body is invalid, including an unsupported content "
                 "type or invalid size."
@@ -173,7 +173,7 @@ def create_upload_intent(
             "model": ErrorResponse,
             "description": "The stored object is not a PDF.",
         },
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "description": (
                 "The upload size does not match the declared size, or the request "
                 "path is invalid."

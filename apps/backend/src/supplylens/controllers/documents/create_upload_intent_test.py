@@ -84,10 +84,22 @@ def test_create_upload_intent_rejects_persistence_id_mismatch() -> None:
         create_upload_intent(storage, persistence, command)
 
 
-def test_create_upload_intent_does_not_persist_when_storage_signing_fails() -> None:
+def test_create_upload_intent_persists_before_storage_signing() -> None:
     storage = Mock(spec=ObjectStorage)
     persistence = Mock(spec=DocumentPersistence)
     storage.create_upload_url.side_effect = RuntimeError("synthetic storage failure")
+    persistence.create_new_document.return_value = Document(
+        id=DOCUMENT_ID,
+        filename="invoice.pdf",
+        size_bytes=512,
+        document_type=None,
+        page_count=None,
+        upload_status=DocumentUploadStatus.PENDING,
+        processing_status=DocumentProcessingStatus.PENDING,
+        created_at=datetime(2026, 1, 1),
+        uploaded_at=None,
+        processed_at=None,
+    )
     command = CreateUploadIntentCommand("invoice.pdf", "application/pdf", 512)
 
     with (
@@ -99,4 +111,6 @@ def test_create_upload_intent_does_not_persist_when_storage_signing_fails() -> N
     ):
         create_upload_intent(storage, persistence, command)
 
-    persistence.create_new_document.assert_not_called()
+    persistence.create_new_document.assert_called_once_with(
+        id=DOCUMENT_ID, filename="invoice.pdf", size_bytes=512
+    )

@@ -37,12 +37,6 @@ def create_upload_intent(
     new_uuid: UUID = uuid7()
     object_key = create_object_key(new_uuid)
 
-    upload_url: PresignedURL = storage.create_upload_url(
-        object_key=object_key,
-        content_type=req.content_type,
-        size_bytes=req.size_bytes,
-    )
-
     document = persistence.create_new_document(
         id=new_uuid,
         filename=req.filename,
@@ -53,6 +47,12 @@ def create_upload_intent(
         raise MismatchBetweenPersistenceAndStorageError(
             f"Document UUID mismatch: expected {new_uuid}, got {document.id}"
         )
+
+    upload_url: PresignedURL = storage.create_upload_url(
+        object_key=object_key,
+        content_type=req.content_type,
+        size_bytes=req.size_bytes,
+    )
 
     return CreateUploadIntentCommandResult(
         id=new_uuid,
