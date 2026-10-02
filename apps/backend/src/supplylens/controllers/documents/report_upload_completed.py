@@ -39,11 +39,19 @@ def report_upload_completed(
         )
 
     if stored_document.size_bytes != persistence_document.size_bytes:
+        persistence.update_document_upload_status(
+            id=id, new_status=DocumentUploadStatus.FAILED
+        )
+        storage.delete_object(create_object_key(id))
         raise StoreDocumentInvalidSizeError(
             f"Document with ID {id} has inconsistent size information"
         )
 
     if stored_document.content_type != "application/pdf":
+        persistence.update_document_upload_status(
+            id=id, new_status=DocumentUploadStatus.FAILED
+        )
+        storage.delete_object(create_object_key(id))
         raise DocumentInvalidContentTypeError(
             f"Document with ID {id} has invalid content type: {stored_document.content_type}"  # noqa: E501
         )

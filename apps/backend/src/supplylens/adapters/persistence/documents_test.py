@@ -286,6 +286,9 @@ def test_committed_delete_removes_only_requested_document(session: Session) -> N
     with Session(session.get_bind()) as verification_session:
         verification_adapter = DocumentPersistenceAdapter(verification_session)
         assert verification_adapter.get_document_data(deleted_id) is None
+        deleted_model = verification_session.get(Document, deleted_id)
+        assert deleted_model is not None
+        assert deleted_model.deleted_at is not None
         retained_document = verification_adapter.get_document_data(retained_id)
         assert retained_document is not None
         assert retained_document.filename == "retained.pdf"
