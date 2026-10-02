@@ -23,7 +23,7 @@ def get_database_url() -> str:
     return database_url.strip()
 
 
-def create_session() -> None:
+def __create_session() -> None:
     database_url = get_database_url()
     engine = create_engine(database_url)
     session_factory = sessionmaker(
@@ -38,21 +38,22 @@ def create_session() -> None:
 
 
 def get_session() -> Generator[Session, None, None]:
+    """Commit on successful completion, roll back on failure, and close the session."""
     if SessionLocal is None:
-        create_session()
+        __create_session()
 
     session_factory = SessionLocal
     if session_factory is None:
         raise RuntimeError("Database session factory was not initialized.")
 
-    with session_factory() as session:
+    with session_factory() as session, session.begin():
         yield session
 
 
 def health_check() -> bool:
     try:
         if SessionEngine is None:
-            create_session()
+            __create_session()
 
         engine = SessionEngine
         if engine is None:

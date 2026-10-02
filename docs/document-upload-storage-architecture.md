@@ -38,7 +38,9 @@ The key architectural decision is that **PostgreSQL stores metadata and extracte
 ┌───────────────┐
 │    FastAPI    │
 │               │
+│ - authenticate│
 │ - authorize   │
+│ - resolve business storage config             │
 │ - create UUID │
 │ - DB metadata │
 │ - sign PUT URL│
@@ -78,6 +80,8 @@ The key architectural decision is that **PostgreSQL stores metadata and extracte
 ┌────────┴─────────┐
 │ Python worker    │
 │                  │
+│ resolves storage │
+│ from workspace   │
 │ downloads PDF    │
 │ validates PDF    │
 │ extracts text    │
@@ -110,7 +114,7 @@ FastAPI                             FastAPI
 PostgreSQL + pgvector              PostgreSQL + pgvector
 ```
 
-Application/domain code must not depend directly on R2 or MinIO. It depends on an **object-storage abstraction backed by an S3-compatible implementation**.
+Application/domain code must not depend directly on R2 or MinIO. It depends on an **object-storage abstraction backed by an S3-compatible implementation**. A business workspace owns its documents and its server-side storage configuration. The API and worker resolve the correct S3-compatible client from the document's authorized workspace; they must not use a client or credentials supplied by the browser.
 
 ---
 
@@ -187,9 +191,9 @@ Keeping the application below approximately 8 GiB creates room for temporary/der
 
 > Pricing can change. Re-check the Cloudflare R2 pricing page before production launch.
 
-### 4.3 Bucket
+### 4.3 Business buckets
 
-Production bucket:
+Each business workspace configures a private R2 bucket in its own storage account. A business may use a dedicated bucket or account according to its configuration; the application must never assume every workspace shares one production bucket. The following name is only a local-development example:
 
 ```text
 supplylens-documents
@@ -203,30 +207,32 @@ Do not expose it as a public bucket and do not store public object URLs in Postg
 
 Do not use the user-provided filename as the object key.
 
-Use the application-generated `document_id`:
+Use the application-generated `workspace_id` and `document_id`:
 
 ```text
-documents/{document_id}/original.pdf
+workspaces/{workspace_id}/documents/{document_id}/original.pdf
 ```
 
 Example:
 
 ```text
-documents/f7e76bd8-4d62-49bb-ae18-b24d6879cc99/original.pdf
+workspaces/4b4f77b0-2e4d-4f73-9f6a-0702af66ab23/documents/f7e76bd8-4d62-49bb-ae18-b24d6879cc99/original.pdf
 ```
 
 Future derived artifacts can live under the same prefix:
 
 ```text
-documents/{document_id}/original.pdf
-documents/{document_id}/derived/ocr.pdf
-documents/{document_id}/derived/pages/0001.png
+workspaces/{workspace_id}/documents/{document_id}/original.pdf
+workspaces/{workspace_id}/documents/{document_id}/derived/ocr.pdf
+workspaces/{workspace_id}/documents/{document_id}/derived/pages/0001.png
 ```
 
-For a future multi-tenant version:
+The workspace ID in the key is defense in depth, not an authorization check. The database workspace relationship and API membership check remain authoritative. Separate business buckets can use the same workspace-scoped key layout.
+
+If a provider requires a different key format, preserve both workspace and document identity in its equivalent namespace:
 
 ```text
-tenants/{tenant_id}/documents/{document_id}/original.pdf
+workspaces/{workspace_id}/documents/{document_id}/original.pdf
 ```
 
 The database, not the object key, is the authoritative source for the original filename.
@@ -420,22 +426,13 @@ MAX_DOCUMENT_SIZE_BYTES=26214400
 STORAGE_HARD_LIMIT_BYTES=8589934592
 ```
 
-This single-endpoint configuration assumes the API and browser can both reach MinIO at `localhost:9000`. A containerized API needs separate internal and browser-facing endpoint support, which is not part of the current implementation.
+This single-endpoint configuration assumes the API and browser can both reach MinIO at `localhost:9000`. A containerized API needs separate internal and browser-facing endpoint support, which is not part of the current implementation. Local development may use this shared MinIO configuration for synthetic workspaces; it is not the production model for business-specific credentials.
 
-### 7.2 Production `.env`
+### 7.2 Production storage configuration
 
 ```env
 DATABASE_URL=...
 APP_ENV=production
-
-S3_PROVIDER=r2
-S3_BUCKET=supplylens-documents
-S3_REGION=auto
-
-S3_ENDPOINT=https://<CLOUDFLARE_ACCOUNT_ID>.r2.cloudflarestorage.com
-
-S3_ACCESS_KEY_ID=...
-S3_SECRET_ACCESS_KEY=...
 
 S3_UPLOAD_URL_TTL_SECONDS=900
 S3_DOWNLOAD_URL_TTL_SECONDS=900
@@ -444,9 +441,9 @@ MAX_DOCUMENT_SIZE_BYTES=26214400
 STORAGE_HARD_LIMIT_BYTES=8589934592
 ```
 
-Never expose `S3_ACCESS_KEY_ID` or `S3_SECRET_ACCESS_KEY` to React.
+Production R2 settings are configured per business workspace, not as one global application bucket. Store non-secret settings such as provider, account endpoint, bucket, and region with the workspace configuration; store access-key and secret-key values in a secrets manager and persist only a reference to that secret. Resolve and validate the workspace configuration after authenticating the caller and checking membership. The API and worker create/use a storage adapter for that workspace. Never expose credentials to React, accept storage credentials from ordinary document requests, or log credentials or complete presigned URLs.
 
-Only the backend signs URLs.
+Only the backend signs URLs, using the storage client for the authorized document's workspace. Workers must likewise select storage from the document's persisted workspace, not from request data.
 
 ---
 
@@ -539,9 +536,9 @@ S3ObjectStorage
 
 The only environment-specific behavior should be configuration.
 
-### 8.1 Single S3 client
+### 8.1 Workspace-scoped S3 clients
 
-The adapter owns its validated storage settings and boto3 client per instance. Trim and validate the endpoint, bucket, access key, and secret key when constructing settings. Unit tests can inject an S3 client. The adapter uses one client and one `S3_ENDPOINT` for object operations and URL signing. This is suitable when that endpoint is reachable by both the API and browser. A future containerized API setup may require separate internal and browser-facing endpoints.
+The adapter owns its validated storage settings and boto3 client per instance. Trim and validate the endpoint, bucket, access key, and secret key when constructing settings. Unit tests can inject an S3 client. Create or retrieve the client using the authenticated workspace's server-side settings; do not keep one global production client if businesses configure different R2 accounts or buckets. The adapter uses one client and one `S3_ENDPOINT` for object operations and URL signing. This is suitable when that endpoint is reachable by both the API and browser. A future containerized API setup may require separate internal and browser-facing endpoints. Protect cached clients from cross-workspace configuration mix-ups and never cache raw credentials in logs or ordinary database fields.
 
 Pseudo-implementation:
 
@@ -646,17 +643,18 @@ Do not require SHA-256 for the first implementation. The worker can calculate th
 
 Before creating the upload:
 
-1. Authenticate/authorize the caller when authentication exists.
+1. Authenticate the caller and verify membership in the selected business workspace. Authentication and workspace authorization are mandatory before real-data use; synthetic local development may use a test-only bypass.
 2. Reject empty filename.
 3. Require declared `content_type` to be `application/pdf`.
 4. Require `size_bytes > 0`.
 5. Reject declared size larger than `MAX_DOCUMENT_SIZE_BYTES`.
-6. Check the application's storage quota.
-7. Generate `document_id` as UUID.
-8. Construct the object key from `document_id`.
-9. Insert the `documents` row in `PENDING` state.
-10. Generate a short-lived presigned `PUT` URL bound to the declared exact content length.
-11. Return the upload information.
+6. Check the application's storage quota for the authorized workspace.
+7. Resolve `workspace_id` from the authenticated caller's verified membership; if the caller can access multiple workspaces, verify any selected workspace against those memberships.
+8. Generate `document_id` as UUID and persist it with the owning `workspace_id`.
+9. Construct a workspace-scoped object key and resolve that workspace's storage client.
+10. Insert the `documents` row in `PENDING` state.
+11. Generate a short-lived presigned `PUT` URL bound to the declared exact content length.
+12. Return the upload information.
 
 Do not trust the filename extension as proof that the content is a PDF.
 
@@ -681,6 +679,8 @@ Do not trust the filename extension as proof that the content is a PDF.
 ```
 
 The presigned URL is a temporary bearer capability. Do not log the complete URL in application logs.
+
+The authenticated business workspace owns the resulting document. All later completion, metadata, download URL, retry, and delete requests must load the document scoped by both its ID and the caller's authorized workspace. This applies even when an object key contains the workspace ID.
 
 ### 9.3 Step 2 — frontend uploads directly to object storage
 
@@ -846,6 +846,8 @@ Response:
 ```
 
 Use short expiry values for read URLs.
+
+Before signing, authenticate the caller and verify that the document belongs to a workspace where the caller is a member. Resolve that workspace's storage client; never accept a bucket, object key, or storage credentials from the caller.
 
 ### 9.9 Optional retry endpoint
 
@@ -1317,13 +1319,13 @@ This prevents malformed or mislabeled files from entering the extraction pipelin
 Never overwrite:
 
 ```text
-documents/{document_id}/original.pdf
+workspaces/{workspace_id}/documents/{document_id}/original.pdf
 ```
 
-If OCR or PDF optimization is introduced later, create a derived object:
+If OCR or PDF optimization is introduced later, create a derived object under the same workspace and document prefix:
 
 ```text
-documents/{document_id}/derived/ocr.pdf
+workspaces/{workspace_id}/documents/{document_id}/derived/ocr.pdf
 ```
 
 Processing should always be reproducible from the original source.

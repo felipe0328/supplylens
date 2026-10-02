@@ -14,6 +14,10 @@ class StorageUnavailableError(StorageError):
     """Storage could not be reached or could not complete the operation."""
 
 
+class UploadTooLargeError(ValueError):
+    """The declared upload size exceeds the configured document limit."""
+
+
 @dataclass(frozen=True)
 class ObjectInfo:
     key: str

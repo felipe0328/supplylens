@@ -17,7 +17,7 @@ This document refines the earlier MVP definition wherever its order/invoice exam
 
 ## 2. Scope and architectural rules
 
-The first release supports one private business workspace, one or more signed-in operators, supplier purchase PDFs, a product catalog, versioned calculation policies, purchase-only reports, document search, and bounded optional AI assistance. The public demonstration uses synthetic or safely anonymized data. Payments, stock receipt, inventory, sales, and demand forecasting are later domains.
+The first release supports multiple private business workspaces, with one or more signed-in operators in each workspace, supplier purchase PDFs, a product catalog, versioned calculation policies, purchase-only reports, document search, and bounded optional AI assistance. Each business owns its data and configures its own private object-storage account/bucket. Operators within a business share that business's documents; users from another business cannot access them. The public demonstration uses synthetic or safely anonymized data. Payments, stock receipt, inventory, sales, and demand forecasting are later domains.
 
 Keep these invariants visible in code and UI:
 
@@ -62,8 +62,9 @@ Use stable IDs, database constraints, timestamps, and explicit migrations. The f
 
 | Entity | Key fields and relationships | Why it exists |
 | --- | --- | --- |
+| `BusinessWorkspace` / `WorkspaceMembership` | Business identity, member users and roles, storage configuration reference. | Defines the business data boundary and which signed-in operators can act for it. |
 | `Supplier` | Name, normalized identifiers, aliases. | A supplier identity can appear under different printed names. |
-| `Document` | Supplier, type as printed or classified, reference, date, currency, SHA-256, storage key, processing status, optional `purchase_id`. | One immutable source PDF; document type is descriptive, not a requirement for confirmation. |
+| `Document` | Owning `workspace_id`, supplier, type as printed or classified, reference, date, currency, SHA-256, storage key, processing status, optional `purchase_id`. | One immutable source PDF owned by a business workspace; document type is descriptive, not a requirement for confirmation. |
 | `DocumentField` / `DocumentLine` | Extracted candidates, printed values, page and optional bounding box, extractor version, confidence or warning, user correction; line role (`product`, `charge`, or `other`). | Keep evidence and correction history separate from the purchase view. A handling fee is not a sellable line. |
 | `Purchase` | Supplier, current reviewed revision ID, explicit business status (`planned`, `ordered`, or `purchase_recorded`). | One purchase case regardless of document count, including pre-orders used for planning. |
 | `PurchaseRevision` / `PurchaseLine` | Reviewed header, monetary components, quantities, original supplier wording and codes, chosen source fields, product link, revision number, confirmer, time. | Immutable reviewed snapshot for reports and estimates. The business status belongs to the revision. |
@@ -202,7 +203,8 @@ This layout expresses boundaries without making every module a separate package.
 
 ## 11. Security, privacy, and failure behavior
 
-- Require authentication before any real document upload or read. Start with one business workspace and simple roles such as `operator` and `admin` only if both are needed; avoid building SaaS tenancy prematurely. Enforce ownership checks on every PDF, passage, purchase, and estimate request.
+- Require authentication for all private API routes before any real supplier data is used. A business workspace is the ownership boundary: its authorized operators share its documents, while other workspaces have no access. Store `workspace_id` on documents and all business-owned records, and scope every read, write, delete, search, and download-URL request to a workspace membership verified by the API. Do not treat an unguessable document ID as authorization.
+- Resolve each workspace's object-storage configuration on the server. Construct/use that workspace's S3-compatible storage client for upload signing, verification, download signing, deletion, and worker access. Keep credentials in a secrets manager or equivalent protected configuration and store only a secret reference with workspace settings; never return credentials to the browser or persist them in plaintext application tables. Presigned URLs are short-lived bearer capabilities and must only be issued after workspace authorization.
 - Validate PDF bytes, size, page count, and processing time. Treat supplier text as untrusted input, including prompt-injection attempts inside a PDF. Run extraction with bounded resources and no arbitrary shell interpolation.
 - Use private storage and short-lived authenticated retrieval through the API. Encrypt transport, manage provider keys as secrets, and never expose them to the browser.
 - LLM assistance is opt-in. Show when excerpts leave the application, minimize those excerpts, and log request metadata without raw private document text. Manual workflow remains available on provider failure.
@@ -241,9 +243,9 @@ Keep storage behind a `DocumentStore` interface (local disk for Compose, private
 4. **Catalog and prices:** Reviewed product mapping, name/SKU suggestions, guided policy editor, policy versioning, transparent estimates, private policy acceptance examples.
 5. **Reports:** One-purchase aggregation, supplier/product filters, currency-safe metrics, source drill-down.
 6. **Document search and optional AI:** Full-text search, local embeddings, hybrid evaluation, cited answer generation, bounded extraction help, approved metric interpretation.
-7. **Deployment readiness:** Auth, backups, load/resource measurements, storage adapter, safe public demo, operational README.
+7. **Real-data readiness:** Authentication, workspace membership and data isolation, per-business storage configuration/client resolution, backups, load/resource measurements, safe public demo, operational README. Synthetic end-to-end development can precede this slice; do not upload or process real supplier data until it is complete.
 
-Each slice should run end to end before adding the next. A useful initial PR is the repository skeleton plus a synthetic PDF upload that creates a processing job and an editable draft. Avoid building every table, screen, and AI feature upfront.
+Each slice should run end to end before adding the next. A useful initial PR is the repository skeleton plus a synthetic PDF upload that creates a processing job and an editable draft. Avoid building every table, screen, and AI feature upfront. The synthetic flow may run without authentication during development, but real supplier data requires authenticated, workspace-scoped API and storage access.
 
 ## 15. Decisions and open measurements
 

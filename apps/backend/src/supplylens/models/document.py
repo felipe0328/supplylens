@@ -1,4 +1,3 @@
-import enum
 import uuid
 from datetime import datetime
 
@@ -6,29 +5,17 @@ from sqlalchemy import CheckConstraint, DateTime, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from supplylens.database.database import Base
-
-
-class DocumentUploadStatus(enum.Enum):
-    PENDING = "PENDING"
-    UPLOADED = "UPLOADED"
-    FAILED = "FAILED"
-
-
-class DocumentProcessingStatus(enum.Enum):
-    PENDING = "PENDING"
-    PROCESSING = "PROCESSING"
-    PROCESSED = "PROCESSED"
-    FAILED = "FAILED"
+from supplylens.domain.documents import DocumentProcessingStatus, DocumentUploadStatus
 
 
 class Document(Base):
     __tablename__ = "documents"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
 
     filename: Mapped[str]
     size_bytes: Mapped[int]
-    document_type: Mapped[str]
+    document_type: Mapped[str | None]
     page_count: Mapped[int | None]
 
     upload_status: Mapped[DocumentUploadStatus] = mapped_column(

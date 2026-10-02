@@ -166,7 +166,7 @@ This project can demonstrate hands-on decisions and code. Career history and lea
 
 ## 9. Data and privacy boundaries
 
-- One private business workspace is enough for the MVP. The user must sign in to access real supplier documents.
+- Each business has a private workspace. Its authenticated members share that business's data; users from another business cannot access it. Each business configures its own private R2 storage account/bucket for real-data use. Authentication and workspace authorization are required before real supplier documents are uploaded or read; local synthetic development may use shared MinIO configuration.
 - The public repository and any public demo use synthetic or properly anonymized PDFs and purchase data. Real Mulligan documents and policy values remain private.
 - LLM assistance is off by default. The business explicitly enables it and configures a provider credential.
 - When possible, only relevant extracted text excerpts are sent to the provider, not entire PDFs. The interface makes the use of external processing visible.

@@ -2,15 +2,16 @@
 
 This is the FastAPI and SQLAlchemy backend for SupplyLens, managed with `uv`.
 
-The current B0 foundation includes:
+The current implementation includes:
 
 - `GET /health` for process liveness
 - `GET /api/v1/health/ready` for PostgreSQL readiness
+- supplier PDF upload intents, upload verification, metadata, download URLs, and deletion
 - lazy SQLAlchemy engine and session initialization
-- Alembic configuration with an empty initial revision
+- Alembic migrations for the implemented persistence model
 - automated API/database unit tests and a Docker-backed migration test
 
-The procurement, document-ingestion, and policy domains are not implemented yet.
+Procurement workflows, catalog matching, and pricing policies are not implemented yet.
 
 ## Setup
 
@@ -45,8 +46,25 @@ The health endpoints are available at:
 
 - `http://127.0.0.1:8000/health`
 - `http://127.0.0.1:8000/api/v1/health/ready`
+- `http://127.0.0.1:8000/docs` for interactive Swagger UI
+- `http://127.0.0.1:8000/redoc` for ReDoc
+- `http://127.0.0.1:8000/openapi.json` for the OpenAPI 3 schema
 
 Liveness returns `{"status":"ok"}` without database configuration. Readiness returns `{"status":"healthy"}` after a successful database check; missing configuration or an unavailable database returns `503` with a safe message.
+
+## Document API
+
+The versioned document API is available under `/api/v1/documents`:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/uploads` | Create a document record and receive a short-lived PDF upload URL. |
+| `POST` | `/{id}/complete` | Verify the stored PDF and mark the upload complete. |
+| `GET` | `/{id}` | Read document metadata and upload/processing status. |
+| `POST` | `/{id}/download-url` | Receive a short-lived PDF download URL for an uploaded document. |
+| `DELETE` | `/{id}` | Delete the document record and stored PDF. |
+
+To upload a document, create an upload intent, send the PDF bytes to the returned storage URL using its returned method and headers, then call `/{id}/complete`. Upload and download URLs expire according to their respective configured lifetimes. The OpenAPI schema documents the request constraints, response fields, and documented error statuses.
 
 ## Quality and tests
 
