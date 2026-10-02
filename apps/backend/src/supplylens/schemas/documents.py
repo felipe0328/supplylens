@@ -31,8 +31,7 @@ class CreateUploadIntentResponse(BaseModel):
     id: UUID = Field(description="ID assigned to the document.")
     upload: UploadInstructions = Field(
         description=(
-            "Short-lived instructions for uploading the PDF directly to object "
-            "storage."
+            "Short-lived instructions for uploading the PDF directly to object storage."
         )
     )
 

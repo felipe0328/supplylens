@@ -60,9 +60,7 @@ _STORAGE_UNAVAILABLE_RESPONSE = {
         "description": "Object storage is unavailable.",
     }
 }
-_VALIDATION_ERROR_SCHEMA = {
-    "$ref": "#/components/schemas/HTTPValidationError"
-}
+_VALIDATION_ERROR_SCHEMA = {"$ref": "#/components/schemas/HTTPValidationError"}
 
 
 def _document_http_error(error: Exception) -> HTTPException:
@@ -120,9 +118,7 @@ def _document_http_error(error: Exception) -> HTTPException:
                 "The request body is invalid, including an unsupported content "
                 "type or invalid size."
             ),
-            "content": {
-                "application/json": {"schema": _VALIDATION_ERROR_SCHEMA}
-            },
+            "content": {"application/json": {"schema": _VALIDATION_ERROR_SCHEMA}},
         },
     },
 )
