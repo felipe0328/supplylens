@@ -8,7 +8,7 @@ from supplylens.models.document import Document as DocumentModel
 from supplylens.port.persistence.documents import Document as AbstractDocument
 from supplylens.port.persistence.documents import DocumentPersistence
 
-from .mappers import map_model_to_abstraction
+from .mappers import map_model_document_to_abstraction
 
 
 class DocumentPersistenceAdapter(DocumentPersistence):
@@ -32,7 +32,7 @@ class DocumentPersistenceAdapter(DocumentPersistence):
         )
         self._session.add(new_document)
         self._session.flush()
-        return map_model_to_abstraction(new_document)
+        return map_model_document_to_abstraction(new_document)
 
     def delete_document(self, id: UUID) -> None:
         document = self._session.get(DocumentModel, id)
@@ -48,7 +48,7 @@ class DocumentPersistenceAdapter(DocumentPersistence):
             )
         )
         if document is not None:
-            return map_model_to_abstraction(document)
+            return map_model_document_to_abstraction(document)
         return None
 
     def update_document_upload_status(
@@ -65,7 +65,7 @@ class DocumentPersistenceAdapter(DocumentPersistence):
         ):
             document.uploaded_at = func.now()
         self._session.flush()
-        return map_model_to_abstraction(document)
+        return map_model_document_to_abstraction(document)
 
     def commit(self) -> None:
         self._session.commit()

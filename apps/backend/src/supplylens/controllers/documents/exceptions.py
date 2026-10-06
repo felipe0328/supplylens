@@ -16,3 +16,7 @@ class DocumentInvalidContentTypeError(Exception):
 
 class MismatchBetweenPersistenceAndStorageError(Exception):
     """Mismatch between the persistence and storage layers for a document."""
+
+
+class InvalidJobProcessingID(Exception):
+    """Received wrong job id from database"""
