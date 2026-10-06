@@ -4,9 +4,10 @@
 
 ### From supplier PDFs to trustworthy purchase intelligence
 
-**Reviewable extraction · Human confirmation · Transparent calculations · Cited answers**
+**Reviewable extraction · Human validation · Deterministic calculations · Evidence-first workflows**
 
-![Status](https://img.shields.io/badge/status-early%20scaffold-f59e0b)
+![Version](https://img.shields.io/badge/version-v0.7.0-8b5cf6)
+![Status](https://img.shields.io/badge/status-early%20scaffold-orange)
 ![Backend](https://img.shields.io/badge/backend-FastAPI-009688)
 ![Frontend](https://img.shields.io/badge/frontend-React%20%2B%20TypeScript-149eca)
 ![Database](https://img.shields.io/badge/database-PostgreSQL%20%2B%20pgvector-4169e1)
@@ -16,162 +17,259 @@
 
 ---
 
-## The idea
+## 🚀 Product vision
 
-Small retailers receive purchase orders, invoices, and scanned supplier PDFs containing the information they need—but not in a form they can reliably analyze. SupplyLens turns those documents into structured purchase records while keeping the original evidence, the user's corrections, and every calculated estimate visible.
+SupplyLens turns supplier PDFs into structured, reviewable purchase data for small retailers without letting AI blur the lines between evidence, confirmed records, and business policy.
 
-> **The document is evidence. The confirmed record is truth. AI is an assistant, not an authority.**
+> The document is evidence. The approved record is truth. The model is an assistant, not an authority.
 
-The first real use case is a single private retailer, while the public project remains business-neutral and uses only synthetic or anonymized data.
+This repository is intentionally still in the early scaffold phase, but the architecture and guardrails are already clear:
 
-## The approach
+- no-LLM path is the real product baseline
+- human confirmation remains the source of truth
+- calculations must be deterministic and auditable
+- provenance and versioning matter more than convenience
 
-```mermaid
-flowchart LR
-    A[Supplier PDF] --> B{Digital or scan?}
-    B -->|Digital| C[Text and table extraction]
-    B -->|Scan| D[Local OCR]
-    D --> C
-    C --> E[Editable draft + source pages]
-    E --> F[Validation findings]
-    F --> G[Human review and confirmation]
-    G --> H[(Trusted purchase data)]
-    H --> I[Reports and trends]
-    H --> J[Versioned policy estimates]
-    C --> K[Document search]
-    K --> L[Cited passages]
-    L -. optional .-> M[LLM-composed answer]
-```
+---
 
-SupplyLens separates three kinds of information that are easy to blur together:
+## 🧭 Where the project stands today
 
-| Layer | Meaning | Authority |
+| Area | Current state | Realistic status |
 | --- | --- | --- |
-| **Document facts** | What a supplier PDF appears to say | Must retain page-level provenance |
-| **Confirmed records** | Values reviewed and accepted by a person | Source for purchase metrics |
-| **Policy estimates** | Cost or price outputs from explicit inputs and rules | Versioned, reproducible, and clearly labeled |
+| Backend | FastAPI app with `/health` and `/api/v1/health/ready` | Health checks and database wiring are live; domain workflow is still planned |
+| Frontend | Vite + React + TypeScript starter | A working UI shell exists, but not the business workflow yet |
+| Database | PostgreSQL 17 + pgvector via Docker Compose | Ready for local development and future migrations |
+| AI | Optional integration layer only | Not required for the MVP path |
+| Tests | Unit/API tests by default; PostgreSQL and MinIO integration tests run explicitly | `pytest` and `make be-test` run unit tests; `make be-test-integration` runs integration tests |
 
-This separation prevents uncertain OCR, generated text, or changing business formulas from silently rewriting purchase history.
+### ✅ What is implemented
 
-## Two question paths
+- FastAPI application entry point with `/health`
+- v1 router mounted at `/api/v1`
+- readiness endpoint that checks PostgreSQL connectivity
+- SQLAlchemy session factory and lazy engine startup
+- Alembic scaffold for future schema evolution
+- Docker Compose database services for local development and isolated migration tests
+- FastAPI liveness/readiness and database unit tests with a 100% coverage gate
+- root `Makefile` with backend/frontend/bootstrap and quality helpers
 
-```mermaid
-flowchart TB
-    Q[User question] --> T{What kind of answer?}
-    T -->|About document wording| R[Filtered keyword + semantic retrieval]
-    R --> P[Passages with document and page citations]
-    P -. optional LLM .-> A[Concise grounded answer]
-    T -->|About purchase performance| M[Approved metric + typed filters]
-    M --> D[(Confirmed database records)]
-    D --> V[Deterministic result]
-```
+### ⏳ What is still planned
 
-- **Document questions** use hybrid retrieval: exact search finds codes and labels; semantic search finds related wording. Search remains useful without an LLM.
-- **Purchase questions** use approved metrics executed by the server. The model may suggest a metric request, but it never writes or executes SQL.
+- digital PDF ingestion and extraction
+- reviewed purchase record models
+- catalog matching and policy layer
+- report generation and search
+- worker orchestration and provenance tracking
+- end-to-end product test suite and validation flows
 
-## Architecture
+---
+
+## 🏗️ Architecture at a glance
 
 ```mermaid
 flowchart LR
-    UI[React + TypeScript UI] -->|REST / events| API[FastAPI]
+    UI[React + TypeScript UI] --> API[FastAPI API]
     API --> DB[(PostgreSQL + pgvector)]
     API --> STORE[(Private PDF storage)]
-    WORKER[Python document worker] --> DB
+    WORKER[Python worker] --> DB
     WORKER --> STORE
-    WORKER --> OCR[OCRmyPDF + Tesseract]
-    WORKER --> PARSE[pdfplumber + parsers]
-    API -. opt-in .-> LLM[LLM provider adapter]
+    WORKER --> EXTRACT[Digital PDF extraction tools]
+    API -. optional .-> LLM[LLM adapter]
 ```
 
-The backend is a modular Python application with API and worker entry points—not a fleet of microservices. PostgreSQL stores business records, job state, full-text search data, and vectors. Provider and storage details stay behind adapters so local development does not dictate deployment.
+The app is organized as a modular backend with API and worker entry points, not a microservice fleet. The real product logic stays deterministic and provider-agnostic behind adapters.
 
-## Product guardrails
+---
 
-- The complete purchase workflow works with **no LLM credentials**.
-- Extracted values are suggestions until a user confirms them.
-- Money uses deterministic decimal arithmetic and versioned policies.
-- Mixed currencies are never silently combined.
-- Orders and invoices linked to one purchase are not double-counted.
-- Models cannot approve purchases, edit policies, invent missing inputs, or run SQL.
-- Real supplier PDFs, private formulas, and credentials never enter public fixtures or logs.
+## 🛡️ Guardrails and operating principles
 
-## Repository map
+- Full purchase workflow must work with no LLM credentials.
+- Extracted values remain suggestions until a human confirms them.
+- Money and quantities use explicit deterministic logic.
+- Documents keep provenance at source-page and source-record level.
+- LLM output can support retrieval or drafting, but it never becomes the authority.
+- Real supplier PDFs and private business data stay out of public fixtures or logs.
+
+---
+
+## 📁 Repository map
 
 ```text
 SupplyLens/
+├── AGENTS.md              # repository rules and contributor guidance
+├── Makefile               # primary local workflow commands
+├── compose.yaml            # PostgreSQL 17 + pgvector local stack
 ├── apps/
-│   ├── backend/          # FastAPI package; future API and worker modules
-│   └── web/              # React + TypeScript + Vite
-├── docs/                 # Product definition and architecture
-├── fixtures/             # Synthetic PDFs and expected results
-├── infra/                # Deployment configuration
-├── compose.yaml          # Local PostgreSQL + pgvector
-└── AGENTS.md             # Contributor guidance
+│   ├── backend/           # FastAPI app and database/migration setup
+│   └── web/               # React + TypeScript + Vite app
+├── docs/                  # product and technical design docs
+├── fixtures/              # synthetic PDFs and expected JSON
+├── infra/                 # deployment placeholder
+├── specifications/        # engineering process and PR guidance
+│   └── pull-request-definition.md
+└── README.md              # this overview
 ```
 
-## Current status
+---
 
-SupplyLens is at the **repository skeleton** stage.
-
-| Area | Today | MVP direction |
-| --- | --- | --- |
-| Backend | FastAPI app with `/health` | Documents, purchases, catalog, policies, reports, assistant, worker |
-| Frontend | Vite starter | Upload, side-by-side PDF review, reports, cited Q&A |
-| Data | PostgreSQL/pgvector Compose service | Migrations, job leases, provenance, revision history |
-| Tests | Not scaffolded yet | pytest, component tests, end-to-end workflow, retrieval evaluation |
-
-## Run the scaffold
+## ⚙️ Local setup
 
 ### Prerequisites
 
-- Python 3.14 and [uv](https://docs.astral.sh/uv/)
-- Node.js with npm
-- Docker with Compose
+- Python 3.14
+- [uv](https://docs.astral.sh/uv/)
+- Node.js + npm
+- Docker + Docker Compose
+
+### One-time environment setup
+
+```powershell
+# from the repo root
+Copy-Item .env.example .env
+```
+
+The default local backend env points to:
+
+```text
+postgresql+psycopg://supplylens:localdev@127.0.0.1:5433/supplylens
+```
+
+This matches the local database in `compose.yaml`.
+
+### Use the Makefile
 
 ```bash
-# Database
+make setup
+make hooks
+make be
+make fe
+make check
+make docker-start
+make be-test-integration
+make docker-test-storage-stop
+make docker-test-stop
+```
+
+### Quality gates
+
+Run checks locally before pushing instead of before every commit:
+
+```bash
+pre-commit install --hook-type pre-push
+```
+
+This installs the repository hooks for the `pre-push` stage, so the checks fail before a push is accepted. You can still run them manually at any time with:
+
+```bash
+pre-commit run --all-files
+```
+
+### Direct commands
+
+```bash
+# database
+cd /path/to/SupplyLens
 docker compose up -d db
 
-# API (from apps/backend)
-uv sync
+# backend
+cd apps/backend
+uv sync --locked
 uv run uvicorn supplylens.api:app --reload
 
-# Web app (from apps/web)
+# frontend
+cd apps/web
 npm ci
 npm run dev
 ```
 
-Useful frontend checks:
+### Useful validation checks
 
 ```bash
-npm run lint
-npm run build
+# backend syntax, Ruff, and unit/API tests (no Docker services)
+make be-check
+make be-lint
+make be-test
+
+# PostgreSQL and MinIO integration tests (Docker services)
+make be-test-integration
+make docker-test-storage-stop
+make docker-test-stop
+
+# version automation
+make version-test
+
+# frontend lint/build
+make fe-lint
+make fe-build
+
+# database migration checks
+make db-check
+make db-upgrade
 ```
 
-## Delivery roadmap
+From `apps/backend`, plain `uv run pytest` uses the configured default test path
+and runs the co-located unit tests. Integration tests are outside that default
+path and run only through `make be-test-integration`.
+
+---
+
+## 🧪 Current workflow and checks
+
+The repo is deliberately lightweight, but the working flow is clear:
+
+1. install the locked backend and frontend dependencies with `make setup`
+2. start PostgreSQL via Docker and apply/check migrations
+3. start the backend and verify both health endpoints
+4. run `make check` for backend and frontend quality gates
+5. run `make be-test-integration`, then remove the disposable test services with `make docker-test-storage-stop` and `make docker-test-stop`
+6. keep feature work grounded in synthetic documents, not real supplier data
+
+### Health endpoints
+
+- `GET /health` → service liveness
+- `GET /api/v1/health/ready` → checks database connectivity and returns `503` if unavailable
+
+---
+
+## 📚 Read the project docs
+
+- [Backend setup guide](apps/backend/README.md)
+- [Frontend setup guide](apps/web/README.md)
+- [Architecture deep dive](docs/SupplyLens-Architecture-v0.1.md)
+- [MVP definition](docs/SupplyLens-MVP-Definition-v0.1.md)
+- [Contributing rules](AGENTS.md)
+
+---
+
+## 🧠 Agent and workflow guidance
+
+The project intentionally keeps AI support secondary to deterministic business logic. Contributor guidance lives in [AGENTS.md](AGENTS.md), and the repo is designed so that coding standards, guardrails, and validation remain explicit rather than hidden inside tooling.
+
+This keeps the engineering workflow aligned with the product mission:
+
+- AI augments, it does not decide
+- provenance is required
+- human review stays central
+- the data model remains deterministic and explainable
+
+---
+
+## 🗺️ Roadmap
 
 ```mermaid
 flowchart LR
-    A[1. Skeleton] --> B[2. Upload and review]
-    B --> C[3. OCR and reconciliation]
-    C --> D[4. Catalog and policies]
-    D --> E[5. Reports]
-    E --> F[6. Search and optional AI]
-    F --> G[7. Deployment readiness]
+    A[Scaffold] --> B[Upload + review]
+    B --> C[Extraction + reconciliation]
+    C --> D[Catalog + policy engine]
+    D --> E[Reports + analytics]
+    E --> F[Search + optional AI]
+    F --> G[Production readiness]
 ```
 
-Each slice should work end to end before the next one expands the system. Quality is measured with synthetic PDFs, expected extracted fields, correction counts, calculation traces, retrieval relevance, citation validity, and a full no-AI workflow.
+Each phase is expected to work end to end using synthetic fixtures before the project expands further.
 
-## Scope boundaries
+---
 
-The MVP covers supplier purchase documents, product matching, configurable estimates, purchase reporting, and cited document search. It does **not** claim to track payments, inventory, stock receipt, retail sales, realized profit, or demand forecasting.
+## 🤝 Contributing
 
-## Read the design
-
-- [MVP definition](docs/SupplyLens-MVP-Definition-v0.1.md) — problem, users, scope, features, and completion criteria.
-- [MVP architecture](docs/SupplyLens-Architecture-v0.1.md) — system boundaries, data model, workflows, security, and build order.
-- [Contributor guidelines](AGENTS.md) — repository conventions and development commands.
-
-## Contributing
-
-Start with the relevant vertical slice, use synthetic data, and preserve provenance at every boundary. Before opening a pull request, run the checks available for the area you changed and describe any privacy, architecture, or calculation impact. See [AGENTS.md](AGENTS.md) for the full guide.
+Start with the relevant feature slice, keep the work grounded in synthetic examples, preserve provenance, and do not introduce hidden business assumptions. For the exact repo conventions and branch/PR expectations, follow [AGENTS.md](AGENTS.md).

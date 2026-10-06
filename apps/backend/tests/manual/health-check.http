@@ -1,0 +1,7 @@
+@baseUrl = http://127.0.0.1:8000
+
+### Liveness: should respond even when the database is unavailable
+GET {{baseUrl}}/health
+
+### Readiness: requires a reachable database
+GET {{baseUrl}}/api/v1/health/ready

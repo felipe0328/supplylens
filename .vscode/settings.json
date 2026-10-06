@@ -1,0 +1,18 @@
+{
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+  "ruff.importStrategy": "fromEnvironment",
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": [
+    "apps/backend/tests",
+    "apps/backend/src"
+  ],
+  "python.envFile": "${workspaceFolder}/.env",
+  "python.terminal.useEnvFile": true
+}

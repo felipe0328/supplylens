@@ -1,0 +1,2 @@
+# PDF byte offsets must not be changed by line-ending conversion.
+*.pdf binary

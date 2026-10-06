@@ -1,0 +1,658 @@
+{
+  "schema_version": 1,
+  "notes": [
+    "All supplier names, codes, references, dates, and amounts are invented.",
+    "Business status is a review hint, never inferred solely from a document type.",
+    "Amounts are decimal strings; charges and discounts are separate from sellable products."
+  ],
+  "documents": [
+    {
+      "file": "pdfs/01_simple_digital_invoice.pdf",
+      "scenario": "digital_baseline",
+      "mode": "digital",
+      "pages": 1,
+      "supplier": "Northstar Tabletop Wholesale",
+      "document_type": "invoice",
+      "reference": "INV-1001",
+      "linked_reference": null,
+      "date": "2026-03-04",
+      "currency": "USD",
+      "display_decimal_separator": ".",
+      "business_status_hint": "purchase_recorded",
+      "related_group": null,
+      "relationship": null,
+      "rows": [
+        {
+          "role": "product",
+          "sku": "CARD-101",
+          "description": "Explorer Card Deck",
+          "quantity": "2",
+          "unit_price": "25.00",
+          "line_total": "50.00",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "DICE-210",
+          "description": "Amber Dice Set",
+          "quantity": "3",
+          "unit_price": "6.50",
+          "line_total": "19.50",
+          "page": 1
+        }
+      ],
+      "printed_products_subtotal": "69.50",
+      "printed_document_total": "69.50",
+      "expected_warnings": []
+    },
+    {
+      "file": "pdfs/02_invoice_handling_and_msrp.pdf",
+      "scenario": "charge_row_and_msrp",
+      "mode": "digital",
+      "pages": 1,
+      "supplier": "Cedar Play Distribution",
+      "document_type": "invoice",
+      "reference": "CP-4420",
+      "linked_reference": null,
+      "date": "2026-03-07",
+      "currency": "USD",
+      "display_decimal_separator": ".",
+      "business_status_hint": "purchase_recorded",
+      "related_group": null,
+      "relationship": null,
+      "rows": [
+        {
+          "role": "charge",
+          "sku": "",
+          "description": "Freight and Handling",
+          "quantity": null,
+          "unit_price": null,
+          "line_total": "30.00",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "BOX-700",
+          "description": "Collector Booster Display",
+          "quantity": "1",
+          "unit_price": "68.25",
+          "line_total": "68.25",
+          "msrp": "119.76",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "MAT-220",
+          "description": "Nebula Playmat",
+          "quantity": "2",
+          "unit_price": "12.40",
+          "line_total": "24.80",
+          "msrp": "19.99",
+          "page": 1
+        }
+      ],
+      "printed_products_subtotal": "93.05",
+      "printed_document_total": "123.05",
+      "expected_warnings": [
+        "CHARGE_ROW_NOT_PRODUCT"
+      ]
+    },
+    {
+      "file": "pdfs/03_preorder_original.pdf",
+      "scenario": "preorder_planning",
+      "mode": "digital",
+      "pages": 1,
+      "supplier": "Northstar Tabletop Wholesale",
+      "document_type": "preorder",
+      "reference": "SO-7003",
+      "linked_reference": null,
+      "date": "2026-04-02",
+      "currency": "USD",
+      "display_decimal_separator": ".",
+      "business_status_hint": "planned",
+      "related_group": "matching_order_invoice",
+      "relationship": "first_document",
+      "rows": [
+        {
+          "role": "product",
+          "sku": "TIN-6",
+          "description": "Moonlight Tin Master Case",
+          "quantity": "2",
+          "unit_price": "54.00",
+          "line_total": "108.00",
+          "weight_lb": "3.80",
+          "pack": "6 tins per case",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "SLEEVE-01",
+          "description": "Clear Standard Sleeves",
+          "quantity": "5",
+          "unit_price": "4.00",
+          "line_total": "20.00",
+          "weight_lb": "0.28",
+          "page": 1
+        }
+      ],
+      "printed_products_subtotal": "128.00",
+      "printed_document_total": "128.00",
+      "expected_warnings": [
+        "PREORDER_NOT_RECORDED_PURCHASE"
+      ]
+    },
+    {
+      "file": "pdfs/04_invoice_matches_preorder.pdf",
+      "scenario": "matching_supporting_document",
+      "mode": "digital",
+      "pages": 1,
+      "supplier": "Northstar Tabletop Wholesale",
+      "document_type": "invoice",
+      "reference": "INV-7003",
+      "linked_reference": "SO-7003",
+      "date": "2026-04-09",
+      "currency": "USD",
+      "display_decimal_separator": ".",
+      "business_status_hint": "purchase_recorded",
+      "related_group": "matching_order_invoice",
+      "relationship": "matches_03",
+      "rows": [
+        {
+          "role": "product",
+          "sku": "TIN-6",
+          "description": "Moonlight Tin Master Case",
+          "quantity": "2",
+          "unit_price": "54.00",
+          "line_total": "108.00",
+          "weight_lb": "3.80",
+          "pack": "6 tins per case",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "SLEEVE-01",
+          "description": "Clear Standard Sleeves",
+          "quantity": "5",
+          "unit_price": "4.00",
+          "line_total": "20.00",
+          "weight_lb": "0.28",
+          "page": 1
+        }
+      ],
+      "printed_products_subtotal": "128.00",
+      "printed_document_total": "128.00",
+      "expected_warnings": []
+    },
+    {
+      "file": "pdfs/05_sales_order_before_change.pdf",
+      "scenario": "order_before_change",
+      "mode": "digital",
+      "pages": 1,
+      "supplier": "Redwood Games Supply",
+      "document_type": "sales_order",
+      "reference": "SO-8005",
+      "linked_reference": null,
+      "date": "2026-05-12",
+      "currency": "USD",
+      "display_decimal_separator": ".",
+      "business_status_hint": "ordered",
+      "related_group": "mismatching_order_invoice",
+      "relationship": "first_document",
+      "rows": [
+        {
+          "role": "product",
+          "sku": "GAME-A",
+          "description": "Castle Quest",
+          "quantity": "4",
+          "unit_price": "18.00",
+          "line_total": "72.00",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "GAME-B",
+          "description": "River Puzzle",
+          "quantity": "2",
+          "unit_price": "30.00",
+          "line_total": "60.00",
+          "page": 1
+        }
+      ],
+      "printed_products_subtotal": "132.00",
+      "printed_document_total": "132.00",
+      "expected_warnings": []
+    },
+    {
+      "file": "pdfs/06_invoice_changed_quantity_fee.pdf",
+      "scenario": "later_document_mismatch",
+      "mode": "digital",
+      "pages": 1,
+      "supplier": "Redwood Games Supply",
+      "document_type": "invoice",
+      "reference": "INV-8005",
+      "linked_reference": "SO-8005",
+      "date": "2026-05-16",
+      "currency": "USD",
+      "display_decimal_separator": ".",
+      "business_status_hint": "review_required",
+      "related_group": "mismatching_order_invoice",
+      "relationship": "differs_from_05",
+      "rows": [
+        {
+          "role": "product",
+          "sku": "GAME-A",
+          "description": "Castle Quest",
+          "quantity": "3",
+          "unit_price": "18.00",
+          "line_total": "54.00",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "GAME-B",
+          "description": "River Puzzle",
+          "quantity": "2",
+          "unit_price": "30.00",
+          "line_total": "60.00",
+          "page": 1
+        },
+        {
+          "role": "charge",
+          "sku": "",
+          "description": "Handling",
+          "quantity": null,
+          "unit_price": null,
+          "line_total": "8.00",
+          "page": 1
+        }
+      ],
+      "printed_products_subtotal": "114.00",
+      "printed_document_total": "122.00",
+      "expected_warnings": [
+        "RELATED_DOCUMENT_DIFFERENCE"
+      ]
+    },
+    {
+      "file": "pdfs/07_multipage_repeated_header.pdf",
+      "scenario": "multipage_table",
+      "mode": "digital",
+      "pages": 2,
+      "supplier": "Willow Accessories",
+      "document_type": "invoice",
+      "reference": "WA-6010",
+      "linked_reference": null,
+      "date": "2026-06-03",
+      "currency": "USD",
+      "display_decimal_separator": ".",
+      "business_status_hint": "purchase_recorded",
+      "related_group": null,
+      "relationship": null,
+      "rows": [
+        {
+          "role": "product",
+          "sku": "SLV-01",
+          "description": "Card Sleeve Color Variant 01 - 100 count",
+          "quantity": "2",
+          "unit_price": "5.25",
+          "line_total": "10.50",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "SLV-02",
+          "description": "Card Sleeve Color Variant 02 - 100 count",
+          "quantity": "2",
+          "unit_price": "5.25",
+          "line_total": "10.50",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "SLV-03",
+          "description": "Card Sleeve Color Variant 03 - 100 count",
+          "quantity": "2",
+          "unit_price": "5.25",
+          "line_total": "10.50",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "SLV-04",
+          "description": "Card Sleeve Color Variant 04 - 100 count",
+          "quantity": "2",
+          "unit_price": "5.25",
+          "line_total": "10.50",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "SLV-05",
+          "description": "Card Sleeve Color Variant 05 - 100 count",
+          "quantity": "2",
+          "unit_price": "5.25",
+          "line_total": "10.50",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "SLV-06",
+          "description": "Card Sleeve Color Variant 06 - 100 count",
+          "quantity": "2",
+          "unit_price": "5.25",
+          "line_total": "10.50",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "SLV-07",
+          "description": "Card Sleeve Color Variant 07 - 100 count",
+          "quantity": "2",
+          "unit_price": "5.25",
+          "line_total": "10.50",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "SLV-08",
+          "description": "Card Sleeve Color Variant 08 - 100 count",
+          "quantity": "2",
+          "unit_price": "5.25",
+          "line_total": "10.50",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "SLV-09",
+          "description": "Card Sleeve Color Variant 09 - 100 count",
+          "quantity": "2",
+          "unit_price": "5.25",
+          "line_total": "10.50",
+          "page": 2
+        },
+        {
+          "role": "product",
+          "sku": "SLV-10",
+          "description": "Card Sleeve Color Variant 10 - 100 count",
+          "quantity": "2",
+          "unit_price": "5.25",
+          "line_total": "10.50",
+          "page": 2
+        },
+        {
+          "role": "product",
+          "sku": "SLV-11",
+          "description": "Card Sleeve Color Variant 11 - 100 count",
+          "quantity": "2",
+          "unit_price": "5.25",
+          "line_total": "10.50",
+          "page": 2
+        },
+        {
+          "role": "product",
+          "sku": "SLV-12",
+          "description": "Card Sleeve Color Variant 12 - 100 count",
+          "quantity": "2",
+          "unit_price": "5.25",
+          "line_total": "10.50",
+          "page": 2
+        },
+        {
+          "role": "product",
+          "sku": "BOX-13",
+          "description": "Deck Storage Box Variant 13",
+          "quantity": "1",
+          "unit_price": "7.00",
+          "line_total": "7.00",
+          "page": 2
+        },
+        {
+          "role": "product",
+          "sku": "BOX-14",
+          "description": "Deck Storage Box Variant 14",
+          "quantity": "1",
+          "unit_price": "7.00",
+          "line_total": "7.00",
+          "page": 2
+        },
+        {
+          "role": "product",
+          "sku": "BOX-15",
+          "description": "Deck Storage Box Variant 15",
+          "quantity": "1",
+          "unit_price": "7.00",
+          "line_total": "7.00",
+          "page": 2
+        },
+        {
+          "role": "product",
+          "sku": "BOX-16",
+          "description": "Deck Storage Box Variant 16",
+          "quantity": "1",
+          "unit_price": "7.00",
+          "line_total": "7.00",
+          "page": 2
+        }
+      ],
+      "printed_products_subtotal": "154.00",
+      "printed_document_total": "154.00",
+      "expected_warnings": []
+    },
+    {
+      "file": "pdfs/10_order_discount_and_shared_fees.pdf",
+      "scenario": "discount_and_charges",
+      "mode": "digital",
+      "pages": 1,
+      "supplier": "Maple Board Games",
+      "document_type": "sales_order",
+      "reference": "MBG-931",
+      "linked_reference": null,
+      "date": "2026-07-02",
+      "currency": "USD",
+      "display_decimal_separator": ".",
+      "business_status_hint": "ordered",
+      "related_group": null,
+      "relationship": null,
+      "rows": [
+        {
+          "role": "product",
+          "sku": "TOKEN-A",
+          "description": "Acrylic Tokens",
+          "quantity": "4",
+          "unit_price": "10.00",
+          "line_total": "40.00",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "BOARD-B",
+          "description": "Foldable Game Board",
+          "quantity": "3",
+          "unit_price": "20.00",
+          "line_total": "60.00",
+          "page": 1
+        },
+        {
+          "role": "discount",
+          "sku": "",
+          "description": "Order Discount",
+          "quantity": null,
+          "unit_price": null,
+          "line_total": "-10.00",
+          "page": 1
+        },
+        {
+          "role": "charge",
+          "sku": "",
+          "description": "Supplier Service Fee",
+          "quantity": null,
+          "unit_price": null,
+          "line_total": "5.00",
+          "page": 1
+        },
+        {
+          "role": "charge",
+          "sku": "",
+          "description": "Freight",
+          "quantity": null,
+          "unit_price": null,
+          "line_total": "7.50",
+          "page": 1
+        }
+      ],
+      "printed_products_subtotal": "100.00",
+      "printed_document_total": "102.50",
+      "expected_warnings": []
+    },
+    {
+      "file": "pdfs/11_case_pack_sellable_units_weight.pdf",
+      "scenario": "pack_expansion_and_weight",
+      "mode": "digital",
+      "pages": 1,
+      "supplier": "Summit Collectibles",
+      "document_type": "invoice",
+      "reference": "SC-774",
+      "linked_reference": null,
+      "date": "2026-07-15",
+      "currency": "USD",
+      "display_decimal_separator": ".",
+      "business_status_hint": "purchase_recorded",
+      "related_group": null,
+      "relationship": null,
+      "rows": [
+        {
+          "role": "product",
+          "sku": "CASE-TCG",
+          "description": "Trading Card Box Case",
+          "quantity": "2",
+          "unit_price": "90.00",
+          "line_total": "180.00",
+          "weight_lb": "8.40",
+          "pack": "6 sellable boxes per case",
+          "sellable_units_per_purchase_unit": "6",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "SINGLE-1",
+          "description": "Single Accessory",
+          "quantity": "5",
+          "unit_price": "4.00",
+          "line_total": "20.00",
+          "weight_lb": "0.12",
+          "sellable_units_per_purchase_unit": "1",
+          "page": 1
+        }
+      ],
+      "printed_products_subtotal": "200.00",
+      "printed_document_total": "200.00",
+      "expected_warnings": []
+    },
+    {
+      "file": "pdfs/12_spanish_eur_missing_weight.pdf",
+      "scenario": "spanish_eur_missing_weight",
+      "mode": "digital",
+      "pages": 1,
+      "supplier": "Ludoteca Sol",
+      "document_type": "invoice",
+      "reference": "LS-1209",
+      "linked_reference": null,
+      "date": "2026-08-03",
+      "currency": "EUR",
+      "display_decimal_separator": ",",
+      "business_status_hint": "purchase_recorded",
+      "related_group": null,
+      "relationship": null,
+      "rows": [
+        {
+          "role": "product",
+          "sku": "JGO-12",
+          "description": "Juego de mesa cooperativo",
+          "quantity": "2",
+          "unit_price": "12.00",
+          "line_total": "24.00",
+          "page": 1
+        },
+        {
+          "role": "product",
+          "sku": "DAD-95",
+          "description": "Dados de colores",
+          "quantity": "1",
+          "unit_price": "9.50",
+          "line_total": "9.50",
+          "page": 1
+        }
+      ],
+      "printed_products_subtotal": "33.50",
+      "printed_document_total": "33.50",
+      "expected_warnings": [
+        "WEIGHT_MISSING"
+      ]
+    },
+    {
+      "file": "pdfs/13_ambiguous_currency.pdf",
+      "scenario": "currency_missing",
+      "mode": "digital",
+      "pages": 1,
+      "supplier": "Quartz Wholesale",
+      "document_type": "unknown",
+      "reference": "QW-13",
+      "linked_reference": null,
+      "date": "2026-08-12",
+      "currency": null,
+      "display_decimal_separator": ".",
+      "business_status_hint": "review_required",
+      "related_group": null,
+      "relationship": null,
+      "rows": [
+        {
+          "role": "product",
+          "sku": "TOKEN-72",
+          "description": "Wooden Tokens",
+          "quantity": "2",
+          "unit_price": "7.25",
+          "line_total": "14.50",
+          "page": 1
+        }
+      ],
+      "printed_products_subtotal": "14.50",
+      "printed_document_total": "14.50",
+      "expected_warnings": [
+        "CURRENCY_MISSING",
+        "WEIGHT_MISSING"
+      ]
+    },
+    {
+      "file": "pdfs/14_incorrect_line_and_document_total.pdf",
+      "scenario": "arithmetic_mismatch",
+      "mode": "digital",
+      "pages": 1,
+      "supplier": "Harbor Hobby Supply",
+      "document_type": "invoice",
+      "reference": "HHS-1400",
+      "linked_reference": null,
+      "date": "2026-08-20",
+      "currency": "USD",
+      "display_decimal_separator": ".",
+      "business_status_hint": "review_required",
+      "related_group": null,
+      "relationship": null,
+      "rows": [
+        {
+          "role": "product",
+          "sku": "PNT-12",
+          "description": "Paint Pots",
+          "quantity": "3",
+          "unit_price": "12.00",
+          "line_total": "35.00",
+          "page": 1
+        }
+      ],
+      "printed_products_subtotal": "35.00",
+      "printed_document_total": "40.00",
+      "expected_warnings": [
+        "LINE_TOTAL_MISMATCH",
+        "DOCUMENT_TOTAL_MISMATCH"
+      ]
+    }
+  ]
+}
