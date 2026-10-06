@@ -5,3 +5,4 @@ from .document import (
     DocumentProcessingStatus,
     DocumentUploadStatus,
 )
+from .processing_job import ProcessingJob, ProcessingJobState
