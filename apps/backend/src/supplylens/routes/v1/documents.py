@@ -6,6 +6,9 @@ from sqlalchemy.orm import Session
 from typing_extensions import Annotated
 
 from supplylens.adapters.persistence.documents import DocumentPersistenceAdapter
+from supplylens.adapters.persistence.processing_job import (
+    ProcessingJobPersistenceAdapter,
+)
 from supplylens.adapters.storage.storage import StorageAdapter
 
 ## Controllers Imports
@@ -35,6 +38,7 @@ from supplylens.controllers.documents.exceptions import (
     DocumentInvalidContentTypeError,
     DocumentNotFoundError,
     DocumentNotUploadedError,
+    InvalidJobProcessingID,
     StoreDocumentInvalidSizeError,
 )
 
@@ -205,12 +209,16 @@ def report_upload_completed(
     id: UUID,
     session: Annotated[Session, Depends(get_session, scope="function")],
 ) -> ReportUploadCompletedResponse | Response:
-    persistence = DocumentPersistenceAdapter(session=session)
+    document_persistence = DocumentPersistenceAdapter(session=session)
+    job_processing_persistence = ProcessingJobPersistenceAdapter(session=session)
     storage = _create_storage_adapter()
     try:
         upload_completed: ReportUploadCompletedCommandResponse = (
             report_upload_completed_controller(
-                persistence=persistence, storage=storage, id=id
+                document_persistence=document_persistence,
+                storage=storage,
+                id=id,
+                job_processing_persistence=job_processing_persistence,
             )
         )
     except (
@@ -223,6 +231,11 @@ def report_upload_completed(
         return JSONResponse(
             status_code=http_error.status_code,
             content={"detail": http_error.detail},
+        )
+    except InvalidJobProcessingID:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Invalid database id",
         )
     return ReportUploadCompletedResponse(
         document=map_controller_document_to_schema_document(upload_completed.document)
