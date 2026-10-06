@@ -49,13 +49,14 @@ def clean_test_database(monkeypatch: pytest.MonkeyPatch) -> Iterator[URL]:
 
 
 @pytest.mark.integration
-def test_migrations_upgrade_and_downgrade_clean_postgres(
+def test_migrations_upgrade_downgrade_and_reupgrade_clean_postgres(
     clean_test_database: URL,
 ) -> None:
     config = Config(str(BACKEND_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
     expected_head = ScriptDirectory.from_config(config).get_current_head()
     assert expected_head is not None
+    expected_tables = {"alembic_version", "documents", "processing_jobs"}
 
     command.upgrade(config, "head")
 
@@ -64,16 +65,25 @@ def test_migrations_upgrade_and_downgrade_clean_postgres(
         with engine.connect() as connection:
             revision = MigrationContext.configure(connection).get_current_revision()
         assert revision == expected_head
-        assert set(inspect(engine).get_table_names()) == {
-            "alembic_version",
-            "documents",
-        }
+        assert set(inspect(engine).get_table_names()) == expected_tables
 
         command.downgrade(config, "base")
 
         with engine.connect() as connection:
             revision = MigrationContext.configure(connection).get_current_revision()
         assert revision is None
+        assert set(inspect(engine).get_table_names()) == {"alembic_version"}
+        assert "processingjobstate" not in {
+            enum["name"] for enum in inspect(engine).get_enums(schema="public")
+        }
+
+        command.upgrade(config, "head")
+
+        with engine.connect() as connection:
+            revision = MigrationContext.configure(connection).get_current_revision()
+        assert revision == expected_head
+        assert set(inspect(engine).get_table_names()) == expected_tables
+        command.check(config)
     finally:
         engine.dispose()
 
