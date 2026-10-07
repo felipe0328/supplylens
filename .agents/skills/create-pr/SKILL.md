@@ -23,24 +23,28 @@ Read the repository-root `AGENTS.md` and `specifications/pull-request-definition
 
 ## Resolve ticket and intention
 
-The branch name is normally the ticket identifier. Treat a single key shaped like `ABC-123` as a ticket candidate, case-insensitively. If the branch contains multiple candidates or its intended ticket is unclear, ask the developer for the ticket key before continuing.
+The ticket id comes from the branch name, then must be confirmed against GitHub before it is written into the title. GitHub issue titles use a dotted task id such as `M1.1`. Branch names use an underscore in that position, so `M1_1` is the branch for `M1.1`.
+
+1. Read the current branch name.
+2. When the branch is `M<number>_<number>`, form a candidate by replacing that underscore with a dot (`M1_1` becomes `M1.1`).
+3. Search repository issues with `gh issue list --search "<candidate> in:title"`. Use the candidate only when exactly one issue title starts with it, and copy the id from that title. Do not put the raw branch spelling in the title.
+4. If issue search returns no starting match, more than one starting match, or cannot be run, stop and ask the developer which ticket id to use. Do not guess. A GitHub Projects board can confirm the same id when `gh project` is authorized; lack of project scope is not a reason to skip the issue search.
+5. A branch that does not match `M<number>_<number>` is not one of these task ids. A single key shaped like `ABC-123` may be used when a Jira lookup confirms that exact key. Otherwise ask the developer when a ticket is required. If no ticket exists and the changes still establish a clear intention, continue without a ticket segment.
 
 Use the branch diff and commit history as the primary evidence for what changed and why:
 
-- When a Jira connector or MCP tool is available and an exact lookup confirms the candidate is a Jira ticket, read the ticket and use its summary, description, and acceptance criteria as supporting context. Do not change Jira.
-- Do not assume that every ticket-shaped key belongs to Jira. If the ticket comes from another source, use the code changes alone when they establish a coherent intention. If external ticket information is needed, ask the developer whether it may be retrieved before accessing that source.
-- If no ticket exists but the changes clearly establish the intention, continue without a ticket. Jira is preferred in the title, not mandatory.
-- If the ticket and changes disagree, or the PR intention remains materially unclear, stop and ask for clarification.
+- When a Jira lookup confirms a candidate, read the ticket and use its summary, description, and acceptance criteria as supporting context. Do not change Jira.
+- If the confirmed ticket and the changes disagree, or the PR intention remains materially unclear, stop and ask for clarification.
 
 ## Draft the title and body
 
 Choose the single lowercase prefix that best represents the primary change. Follow the title format from the PR definition:
 
 ```text
-<prefix>: [<TICKET>] <imperative summary>
+[<TICKET>] <prefix>: <imperative summary>
 ```
 
-Omit the ticket segment only when no ticket is established. Do not invent a ticket, test result, business motivation, or acceptance criterion.
+Use a prefix such as `feat`, `fix`, `minor`, or `major`. The bracketed value is the confirmed GitHub task id, such as `M1.1`, not the branch spelling `M1_1`. Omit the ticket segment only when no ticket is established. Do not invent a ticket, test result, business motivation, or acceptance criterion.
 
 Build the PR body with the exact required structure:
 

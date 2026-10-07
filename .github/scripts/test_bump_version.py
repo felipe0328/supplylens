@@ -3,7 +3,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bump_version import bump_version, parse_version, update_manifest_files
+from bump_version import (
+    bump_version,
+    classify_bump,
+    parse_version,
+    update_manifest_files,
+)
 
 
 class VersionTests(unittest.TestCase):
@@ -12,6 +17,32 @@ class VersionTests(unittest.TestCase):
         for value in ("1.2", "v1.2.3", "1.2.3-alpha"):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 parse_version(value)
+
+    def test_classify_bump_reads_prefix_after_ticket(self) -> None:
+        cases = {
+            "[M1.1] feat: add the user model and password hashing": "minor",
+            "[SUP-123] feat: add database readiness endpoint": "minor",
+            "[21] fix: prevent duplicate purchase totals": "patch",
+            "[SUP-77] minor: expand the purchase report": "minor",
+            "[SUP-90] major: replace the upload API": "major",
+            "[SUP-123] Feat: add an endpoint": "minor",
+            "feat: [SUP-123] add database readiness endpoint": "minor",
+            "major: replace the upload API": "major",
+            "chore: update local development commands": "patch",
+            "[SUP-4] fix: avoid breaking the printed total": "major",
+        }
+        for title, expected in cases.items():
+            with self.subTest(title=title):
+                self.assertEqual(classify_bump(title), expected)
+
+    def test_classify_bump_prefers_labels_and_ignores_blank_values(self) -> None:
+        self.assertEqual(
+            classify_bump("[SUP-1] fix: correct a total", ["Feature"]), "minor"
+        )
+        self.assertEqual(
+            classify_bump("[SUP-1] feat: add an endpoint", "major"), "major"
+        )
+        self.assertEqual(classify_bump("  "), "patch")
 
     def test_bump_version_uses_semantic_versioning(self) -> None:
         self.assertEqual(bump_version("1.2.3", "major"), "2.0.0")

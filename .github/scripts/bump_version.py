@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+from collections.abc import Iterable
 from pathlib import Path
 
 VALID_BUMPS = {"major", "minor", "patch"}
@@ -11,6 +13,46 @@ SEMVER_PATTERN = re.compile(
     r"(?P<minor>0|[1-9]\d*)\."
     r"(?P<patch>0|[1-9]\d*)"
 )
+
+
+def classify_bump(title: str, labels: str | Iterable[str] | None = None) -> str:
+    """Return the semantic bump requested by a pull request title and labels.
+
+    A title may start with a ticket, as in ``[SUP-123] feat: add an endpoint``.
+    The prefix after that ticket selects the bump. Titles that still use the
+    older ``feat: [SUP-123] summary`` form remain valid.
+    """
+
+    if labels is None:
+        label_values: list[str] = []
+    elif isinstance(labels, str):
+        label_values = [label.strip().lower() for label in labels.split(",")]
+    else:
+        label_values = [str(label).strip().lower() for label in labels]
+    normalized_labels = {label for label in label_values if label}
+
+    normalized_title = title.strip().lower()
+    title_without_ticket = re.sub(r"^\[[^\]]+\]\s*", "", normalized_title)
+    candidates = {normalized_title, title_without_ticket}
+
+    def starts_with(prefix: str) -> bool:
+        return any(candidate.startswith(prefix) for candidate in candidates)
+
+    def contains(fragment: str) -> bool:
+        return any(fragment in candidate for candidate in candidates)
+
+    if "major" in normalized_labels or starts_with("major:") or contains("breaking"):
+        return "major"
+    if (
+        "feature" in normalized_labels
+        or "enhancement" in normalized_labels
+        or starts_with("feat:")
+        or starts_with("feature:")
+        or starts_with("minor:")
+        or contains("new feature")
+    ):
+        return "minor"
+    return "patch"
 
 
 def parse_version(value: str) -> tuple[int, int, int]:
@@ -73,13 +115,28 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Bump the project semantic version based on a PR classification."
     )
-    parser.add_argument(
-        "--bump", choices=sorted(VALID_BUMPS), required=True, help="Version bump type"
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument(
+        "--bump", choices=sorted(VALID_BUMPS), help="Version bump type to apply"
+    )
+    action.add_argument(
+        "--print-bump",
+        action="store_true",
+        help="Print the bump selected from PR_TITLE and PR_LABELS",
     )
     parser.add_argument(
         "--version-file", default="VERSION", help="Path to the version file"
     )
     args = parser.parse_args()
+
+    if args.print_bump:
+        print(
+            classify_bump(
+                os.environ.get("PR_TITLE", ""),
+                os.environ.get("PR_LABELS", ""),
+            )
+        )
+        return
 
     version_file = Path(args.version_file).resolve()
     if not version_file.exists():

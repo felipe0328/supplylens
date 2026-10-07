@@ -30,23 +30,25 @@ If independent changes can be reviewed and released separately, they should be s
 
 ## Title
 
-Every pull request must have a clear, non-empty title with exactly one lowercase commit prefix. Include the Jira ticket key whenever one exists.
+Every pull request must have a clear, non-empty title with exactly one lowercase prefix. When a ticket exists, put its key or number first:
 
 ```text
-<prefix>: [<JIRA-TICKET>] <imperative summary>
+[<TICKET>] <prefix>: <imperative summary>
 ```
 
-Common prefixes include `feat`, `chore`, `minor`, `bug`, `fix`, `docs`, `test`, and `refactor`. Use the one prefix that best represents the primary purpose of the PR. Do not combine prefixes.
+Common prefixes include `feat`, `fix`, `minor`, `major`, `chore`, `bug`, `docs`, `test`, and `refactor`. Use the one prefix that best represents the primary purpose of the PR. Do not combine prefixes.
 
 Examples:
 
 ```text
-feat: [SUP-123] add database readiness endpoint
-bug: [SUP-248] prevent duplicate purchase totals
+[M1.1] feat: add the user model and password hashing
+[M1.2] fix: prevent duplicate purchase totals
+[M4.1] minor: expand the purchase report
+[M2.1] major: replace the upload API
 chore: update local development commands
 ```
 
-The Jira ticket is preferred but may be omitted when no ticket exists. The summary should be concise, imperative, and specific enough to identify the change without opening the PR.
+The ticket is preferred but may be omitted when no ticket exists. The summary should be concise, imperative, and specific enough to identify the change without opening the PR. Version automation reads the prefix after the optional ticket: `major` requests a major bump, `feat` and `minor` request a minor bump, and every other prefix requests a patch bump.
 
 ## Required Description
 

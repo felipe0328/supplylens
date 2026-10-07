@@ -84,6 +84,6 @@ Money, quantities, validation, provenance, and policy calculations must remain d
 
 ## Commit and Pull Request Guidelines
 
-Use a clear PR title with exactly one lowercase commit prefix, such as `feat:`, `chore:`, `minor:`, `bug:`, `fix:`, `docs:`, `test:`, or `refactor:`. Prefer the format `<prefix>: [<JIRA-TICKET>] <imperative summary>` when a Jira ticket exists. Do not create commits or otherwise mutate Git history unless the developer explicitly requests it.
+Use a clear PR title with exactly one lowercase prefix, such as `feat:`, `fix:`, `minor:`, `major:`, `chore:`, `bug:`, `docs:`, `test:`, or `refactor:`. When a ticket exists, use `[<TICKET>] <prefix>: <imperative summary>`, where the ticket is the GitHub issue id that matches the branch (`M1_1` is `[M1.1]`). Do not create commits or otherwise mutate Git history unless the developer explicitly requests it.
 
 `specifications/pull-request-definition.md` is the canonical PR definition. Every PR description must contain `Summary`, `Testing` with separate `Unit testing` and `Manual testing` subsections, and `Rollback plan`. The developer remains responsible for approving the final scope and publication of every PR.
