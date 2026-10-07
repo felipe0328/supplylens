@@ -56,7 +56,7 @@ def test_migrations_upgrade_downgrade_and_reupgrade_clean_postgres(
     config.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
     expected_head = ScriptDirectory.from_config(config).get_current_head()
     assert expected_head is not None
-    expected_tables = {"alembic_version", "documents", "processing_jobs"}
+    expected_tables = {"alembic_version", "documents", "processing_jobs", "users"}
 
     command.upgrade(config, "head")
 
@@ -73,9 +73,12 @@ def test_migrations_upgrade_downgrade_and_reupgrade_clean_postgres(
             revision = MigrationContext.configure(connection).get_current_revision()
         assert revision is None
         assert set(inspect(engine).get_table_names()) == {"alembic_version"}
-        assert "processingjobstate" not in {
+        remaining_enums = {
             enum["name"] for enum in inspect(engine).get_enums(schema="public")
         }
+        assert "processingjobstate" not in remaining_enums
+        assert "userrole" not in remaining_enums
+        assert "userstatus" not in remaining_enums
 
         command.upgrade(config, "head")
 
