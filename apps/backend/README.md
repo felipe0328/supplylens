@@ -93,6 +93,27 @@ make db-upgrade
 make db-check
 ```
 
+## Local admin user
+
+Registration creates a pending operator. Accepting that account requires an admin who is already accepted, and a fresh database has no users. `make create-admin` inserts that first admin outside the register endpoint.
+
+From the repository root, after the database is running and migrations are applied:
+
+```bash
+make db-upgrade
+make create-admin
+```
+
+The command reads `ADMIN_USER_EMAIL` and `ADMIN_USER_PASSWORD` from the root `.env`. `.env.example` documents dummy values only. The password must satisfy the same rules as registration: 8 to 128 characters, with at least one letter, one digit, one uppercase letter, and one lowercase letter. Surrounding whitespace in either value is ignored.
+
+The command is safe to run again:
+
+- When that email is already an accepted admin, it prints `Admin user already exists` and leaves the row, including the password, unchanged.
+- When the email is missing, it creates an `admin` user with status `accepted`.
+- When the email belongs to any other account, it reopens that same row as an accepted admin and sets the password from `.env`.
+
+It prints the email, role, and status. It does not print the password or password hash.
+
 ## Project layout
 
 ```text
