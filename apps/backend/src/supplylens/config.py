@@ -127,3 +127,24 @@ def get_app_environment() -> AppEnvironment:
         raise ValueError(
             "APP_ENV must be 'development', 'test', or 'production'."
         ) from exc
+
+
+@dataclass(frozen=True)
+class JWTSettings:
+    secret: str
+    access_ttl_seconds: int
+
+
+__jwt_settings: JWTSettings | None = None
+
+
+def get_jwt_settings() -> JWTSettings:
+    global __jwt_settings
+    if __jwt_settings is None:
+        __jwt_settings = JWTSettings(
+            secret=os.getenv("JWT_SECRET", ""),
+            access_ttl_seconds=_ttl_seconds(
+                os.getenv("JWT_ACCESS_TTL_SECONDS", "900"), "JWT_ACCESS_TTL_SECONDS"
+            ),
+        )
+    return __jwt_settings

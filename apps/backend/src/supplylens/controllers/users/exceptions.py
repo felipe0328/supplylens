@@ -12,3 +12,11 @@ class InvalidEmailAddressError(Exception):
 
 class InvalidPasswordError(Exception):
     """Invalid password."""
+
+
+class UserNotFoundError(Exception):
+    """User not found."""
+
+
+class InvalidCredentialsError(Exception):
+    """Invalid credentials."""

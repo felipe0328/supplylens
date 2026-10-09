@@ -38,3 +38,14 @@ class RegisterRequest(BaseModel):
 
 class RegisterResponse(BaseModel):
     user: User = Field(description="The user that was registered.")
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr = Field(description="The email address of the user.")
+    password: str = Field(description="The password of the user.")
+
+
+class LoginResponse(BaseModel):
+    access_token: str = Field(description="The JWT access token.")
+    token_type: str = Field(description="The type of the token.")
+    expires_in: int = Field(description="The expiration time of the token.")

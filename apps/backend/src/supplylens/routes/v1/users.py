@@ -5,16 +5,24 @@ from sqlalchemy.orm import Session
 
 from supplylens.adapters.persistence.users import UserPersistenceAdapter
 from supplylens.controllers.users.exceptions import (
+    InvalidCredentialsError,
     InvalidEmailAddressError,
     InvalidPasswordError,
     UserAlreadyExistsError,
+    UserNotFoundError,
     UserPendingError,
 )
+from supplylens.controllers.users.login_user import LoginUserCommand, login_user
 from supplylens.controllers.users.register import RegisterUserCommand, register_user
 from supplylens.controllers.users.types import User as ControllerUser
 from supplylens.database.database import get_session
 from supplylens.schemas.common import ErrorResponse
-from supplylens.schemas.users import RegisterRequest, RegisterResponse
+from supplylens.schemas.users import (
+    LoginRequest,
+    LoginResponse,
+    RegisterRequest,
+    RegisterResponse,
+)
 from supplylens.schemas.users import User as SchemaUser
 
 auth_router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -25,6 +33,13 @@ _REGISTER_ERRORS = (
     UserAlreadyExistsError,
     InvalidEmailAddressError,
     InvalidPasswordError,
+)
+_LOGIN_ERRORS = (
+    UserNotFoundError,
+    InvalidPasswordError,
+    UserPendingError,
+    InvalidEmailAddressError,
+    InvalidCredentialsError,
 )
 
 
@@ -42,6 +57,25 @@ def _register_http_error(error: Exception) -> HTTPException:
     if isinstance(error, (InvalidEmailAddressError, InvalidPasswordError)):
         return HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        )
+    if isinstance(error, InvalidEmailAddressError):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        )
+    raise TypeError(f"No HTTP mapping for {type(error).__name__}")
+
+
+def _login_http_error(error: Exception) -> HTTPException:
+    if isinstance(error, InvalidCredentialsError):
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(error),
+        )
+    if isinstance(error, UserPendingError):
+        return HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
             detail=str(error),
         )
     raise TypeError(f"No HTTP mapping for {type(error).__name__}")
@@ -113,3 +147,31 @@ def register(
     except _REGISTER_ERRORS as exc:
         raise _register_http_error(exc) from exc
     return RegisterResponse(user=_to_schema_user(result.user))
+
+
+@auth_router.post(
+    "/login",
+    status_code=status.HTTP_200_OK,
+    summary="Login a user",
+    description="Logs in a user and returns a JWT token.",
+)
+def login(
+    request: LoginRequest,
+    session: Annotated[Session, Depends(get_session, scope="function")],
+) -> LoginResponse:
+    persistence = UserPersistenceAdapter(session=session)
+    try:
+        result = login_user(
+            LoginUserCommand(
+                email=request.email,
+                password=request.password,
+            ),
+            persistence,
+        )
+    except _LOGIN_ERRORS as exc:
+        raise _login_http_error(exc) from exc
+    return LoginResponse(
+        access_token=result.access_token,
+        token_type=result.token_type,
+        expires_in=result.expires_in,
+    )
