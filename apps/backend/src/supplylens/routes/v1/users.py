@@ -154,7 +154,8 @@ def register(
     description=(
         "Returns a short-lived JWT access token when the email and password match "
         "an accepted account. An unknown email and a wrong password return the same "
-        "401. Pending, rejected, expired, and deleted accounts return 403."
+        "401. Pending, rejected, expired, and deleted accounts return 403. A pending "
+        "account past its approval window is treated as expired."
     ),
     responses={
         status.HTTP_401_UNAUTHORIZED: {

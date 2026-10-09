@@ -6,6 +6,7 @@ from argon2.exceptions import InvalidHashError, VerificationError
 
 from supplylens.config import get_jwt_settings
 from supplylens.domain.users import UserStatus
+from supplylens.helpers.users import is_unexpired_pending
 from supplylens.port.persistence.users import User as PortUser
 from supplylens.port.persistence.users import UserPersistence
 from supplylens.tools.encode_decode import encode_jwt
@@ -55,9 +56,7 @@ def login_user(
         raise InvalidCredentialsError(_INVALID_CREDENTIALS)
 
     if user.status is not UserStatus.ACCEPTED:
-        raise AccountNotAcceptedError(
-            _STATUS_MESSAGES.get(user.status, "This account is not available.")
-        )
+        raise AccountNotAcceptedError(_account_not_accepted_message(user))
 
     if needs_rehash:
         persistence.update_user_password(user.id, hash_password(req.password))
@@ -71,6 +70,14 @@ def login_user(
         token_type="Bearer",
         expires_in=settings.access_ttl_seconds,
     )
+
+
+def _account_not_accepted_message(user: PortUser) -> str:
+    if user.status is UserStatus.PENDING and not is_unexpired_pending(
+        user.status, user.pending_expires_at
+    ):
+        return _STATUS_MESSAGES[UserStatus.EXPIRED]
+    return _STATUS_MESSAGES.get(user.status, "This account is not available.")
 
 
 def _reject_unknown_email(password: str) -> NoReturn:

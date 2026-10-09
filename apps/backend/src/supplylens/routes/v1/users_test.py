@@ -521,6 +521,24 @@ def test_login_api_uses_the_same_response_for_bad_credentials(
     assert response.json() == {"detail": "Invalid email or password."}
 
 
+def test_login_api_treats_an_elapsed_pending_window_as_expired(
+    registration_client: tuple[TestClient, sessionmaker[Session]],
+    jwt_environment: None,
+) -> None:
+    client, factory = registration_client
+    client.post("/api/v1/auth/register", json=REGISTER_BODY)
+    with factory() as session:
+        stored = session.scalar(select(UserModel))
+        assert stored is not None
+        stored.pending_expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        session.commit()
+
+    response = client.post("/api/v1/auth/login", json=REGISTER_BODY)
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "This registration expired. Register again."}
+
+
 @pytest.mark.parametrize(
     ("status", "message"),
     [

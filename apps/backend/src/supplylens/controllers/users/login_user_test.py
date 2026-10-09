@@ -201,6 +201,25 @@ def test_login_user_rejects_accounts_that_are_not_accepted(
     assert persistence.updated == []
 
 
+def test_login_user_treats_an_elapsed_pending_window_as_expired(
+    jwt_settings: None,
+) -> None:
+    persistence = FakeUserPersistence(
+        _user(
+            status=UserStatus.PENDING,
+            pending_expires_at=datetime.now(UTC) - timedelta(seconds=1),
+        )
+    )
+
+    with pytest.raises(
+        AccountNotAcceptedError,
+        match="^This registration expired. Register again.$",
+    ):
+        login_user(_command(), persistence)
+
+    assert persistence.updated == []
+
+
 def test_login_user_rejects_an_invalid_email_before_lookup(jwt_settings: None) -> None:
     persistence = FakeUserPersistence(_user())
 
