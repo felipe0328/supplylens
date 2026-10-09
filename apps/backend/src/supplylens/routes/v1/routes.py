@@ -4,9 +4,11 @@ from supplylens.database.database import health_check
 from supplylens.schemas.common import ErrorResponse, HealthResponse
 
 from .documents import documents_router
+from .users import auth_router
 
 router = APIRouter()
 router.include_router(documents_router)
+router.include_router(auth_router)
 
 
 @router.get(

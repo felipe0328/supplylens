@@ -1,9 +1,11 @@
 from supplylens.models.document import Document as ModelDocument
 from supplylens.models.processing_job import ProcessingJob as ModelProcessingJob
+from supplylens.models.user import User as ModelUser
 from supplylens.port.persistence.documents import Document as AbstractDocument
 from supplylens.port.persistence.processing_job import (
     ProcessingJob as AbstractProcessingJob,
 )
+from supplylens.port.persistence.users import User as AbstractUser
 
 
 def map_model_document_to_abstraction(
@@ -40,4 +42,25 @@ def map_model_processing_job_to_abstraction(
         created_at=model_processing_job.created_at,
         started_at=model_processing_job.started_at,
         finished_at=model_processing_job.finished_at,
+    )
+
+
+def map_model_user_to_abstraction(
+    model_user: ModelUser | None,
+    accepted_by: ModelUser | None = None,
+) -> AbstractUser | None:
+    if model_user is None:
+        return None
+
+    return AbstractUser(
+        id=model_user.id,
+        email=model_user.email,
+        password_hash=model_user.password_hash,
+        role=model_user.role,
+        status=model_user.status,
+        accepted_by=map_model_user_to_abstraction(accepted_by),
+        pending_expires_at=model_user.pending_expires_at,
+        created_at=model_user.created_at,
+        updated_at=model_user.updated_at,
+        deleted_at=model_user.deleted_at,
     )
