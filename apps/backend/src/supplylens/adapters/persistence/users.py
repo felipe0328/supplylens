@@ -47,6 +47,42 @@ class UserPersistenceAdapter(UserPersistence):
         self._flush_unique_email(user.email, _insert_user)
         return self._map_user(new_user)
 
+    def create_super_admin_user(self, user: CreateUserRequest) -> User:
+        new_user = UserModel(
+            email=user.email,
+            password_hash=user.password_hash,
+            role=UserRole.ADMIN,
+            status=UserStatus.ACCEPTED,
+            accepted_by=None,
+            pending_expires_at=None,
+            deleted_at=None,
+        )
+
+        def _insert_user() -> None:
+            self._session.add(new_user)
+
+        self._flush_unique_email(user.email, _insert_user)
+        return self._map_user(new_user)
+
+    def retry_super_admin_creation(
+        self, user_id: UUID, user: CreateUserRequest
+    ) -> User:
+        existing_user = self._session.get(UserModel, user_id, with_for_update=True)
+        if existing_user is None:
+            raise ValueError(f"User with id {user_id} not found")
+
+        def _reopen_account() -> None:
+            existing_user.email = user.email
+            existing_user.password_hash = user.password_hash
+            existing_user.role = UserRole.ADMIN
+            existing_user.status = UserStatus.ACCEPTED
+            existing_user.accepted_by = None
+            existing_user.pending_expires_at = None
+            existing_user.deleted_at = None
+
+        self._flush_unique_email(user.email, _reopen_account)
+        return self._map_user(existing_user)
+
     def retry_user_creation(self, user_id: UUID, user: CreateUserRequest) -> User:
         existing_user = self._session.get(UserModel, user_id, with_for_update=True)
         if existing_user is None:
