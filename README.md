@@ -79,6 +79,8 @@ flowchart LR
 
 The app is organized as a modular backend with API and worker entry points, not a microservice fleet. The real product logic stays deterministic and provider-agnostic behind adapters.
 
+`supplylens/domain/` defines shared types only, such as enums and exception classes. It does not hold behavior, and it does not contain tests. Behavior lives in the module that owns it, next to a co-located test. A rule used by both a controller and an adapter lives in `supplylens/helpers/`.
+
 ---
 
 ## 🛡️ Guardrails and operating principles

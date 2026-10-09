@@ -12,6 +12,8 @@ from supplylens.controllers.documents.exceptions import (
     StoreDocumentInvalidSizeError,
 )
 from supplylens.controllers.documents.report_upload_completed import (
+    ReportUploadCompletedCommandResponse,
+    ReportUploadCompletedRejection,
     report_upload_completed,
 )
 from supplylens.domain.documents import DocumentProcessingStatus, DocumentUploadStatus
@@ -74,6 +76,7 @@ def test_report_upload_completed_validates_object_and_updates_status(
         storage, persistence, job_persistence, DOCUMENT_ID
     )
 
+    assert isinstance(response, ReportUploadCompletedCommandResponse)
     storage.head_object.assert_called_once_with(OBJECT_KEY)
     persistence.get_document_data.assert_called_once_with(DOCUMENT_ID)
     persistence.update_document_upload_status.assert_called_once_with(
@@ -149,9 +152,48 @@ def test_report_upload_completed_rejects_invalid_storage_metadata(
     )
     persistence.get_document_data.return_value = _document()
 
-    with pytest.raises(expected_error):
-        report_upload_completed(storage, persistence, job_persistence, DOCUMENT_ID)
+    result = report_upload_completed(storage, persistence, job_persistence, DOCUMENT_ID)
 
+    assert isinstance(result, ReportUploadCompletedRejection)
+    assert isinstance(result.error, expected_error)
+    persistence.update_document_upload_status.assert_called_once_with(
+        id=DOCUMENT_ID, new_status=DocumentUploadStatus.FAILED
+    )
+    persistence.commit.assert_not_called()
+    storage.delete_object.assert_called_once_with(OBJECT_KEY)
+    job_persistence.enqueue_new_job.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("size_bytes", "content_type"),
+    [
+        (511, "application/pdf"),
+        (512, "application/octet-stream"),
+    ],
+)
+def test_report_upload_completed_returns_storage_failure_after_marking_failed(
+    size_bytes: int,
+    content_type: str,
+    job_persistence: Mock,
+) -> None:
+    storage = Mock(spec=ObjectStorage)
+    persistence = Mock(spec=DocumentPersistence)
+    storage.head_object.return_value = ObjectInfo(
+        key=OBJECT_KEY,
+        size_bytes=size_bytes,
+        content_type=content_type,
+        etag=None,
+    )
+    storage.delete_object.side_effect = StorageUnavailableError(
+        "synthetic storage outage"
+    )
+    persistence.get_document_data.return_value = _document()
+
+    result = report_upload_completed(storage, persistence, job_persistence, DOCUMENT_ID)
+
+    assert isinstance(result, ReportUploadCompletedRejection)
+    assert isinstance(result.error, StorageUnavailableError)
+    assert "synthetic storage outage" in str(result.error)
     persistence.update_document_upload_status.assert_called_once_with(
         id=DOCUMENT_ID, new_status=DocumentUploadStatus.FAILED
     )

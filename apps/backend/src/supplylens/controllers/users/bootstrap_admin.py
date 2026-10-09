@@ -8,8 +8,8 @@ from supplylens.port.persistence.users import CreateUserRequest, UserPersistence
 from supplylens.port.persistence.users import User as PortUser
 from supplylens.tools.encryption import hash_password
 
-from .helpers import validate_email_address, validate_password
 from .mappers import map_port_user_to_controller_user
+from .validation import validate_email_address, validate_password
 
 
 class BootstrapAdminOutcome(enum.Enum):
