@@ -13,10 +13,14 @@ from sqlalchemy.pool import StaticPool
 from supplylens.api import create_app
 from supplylens.config import AppEnvironment
 from supplylens.controllers.users.exceptions import (
+    AccountNotAcceptedError,
+    InvalidCredentialsError,
+    InvalidEmailAddressError,
     InvalidPasswordError,
     UserAlreadyExistsError,
     UserPendingError,
 )
+from supplylens.controllers.users.login_user import LoginUserCommandResult
 from supplylens.controllers.users.register import RegisterUserCommandResult
 from supplylens.controllers.users.types import User as ControllerUser
 from supplylens.database import database
@@ -24,6 +28,7 @@ from supplylens.database.database import Base, get_session
 from supplylens.domain.users import UserRole, UserStatus
 from supplylens.models.user import User as UserModel
 from supplylens.routes.v1 import users
+from supplylens.tools.encode_decode import decode_jwt
 from supplylens.tools.encryption import verify_password
 
 USER_ID = UUID("12345678-1234-5678-1234-567812345678")
@@ -337,3 +342,209 @@ def test_register_api_rejects_a_weak_password(
     assert "8 characters" in response.json()["detail"]
     with factory() as session:
         assert session.scalar(select(UserModel)) is None
+
+
+JWT_SECRET = "synthetic-jwt-secret-with-32-characters"
+
+
+@pytest.fixture
+def login_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Mock]:
+    app = create_app(AppEnvironment.TESTING)
+    app.dependency_overrides[get_session] = lambda: None
+    controller = Mock(
+        return_value=LoginUserCommandResult(
+            access_token="synthetic-access-token",
+            token_type="Bearer",
+            expires_in=900,
+        )
+    )
+    monkeypatch.setattr(users, "login_user", controller)
+    monkeypatch.setattr(users, "UserPersistenceAdapter", Mock())
+    return TestClient(app), controller
+
+
+@pytest.fixture
+def jwt_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("JWT_SECRET", JWT_SECRET)
+    monkeypatch.setenv("JWT_ACCESS_TTL_SECONDS", "900")
+    monkeypatch.setattr("supplylens.config.__jwt_settings", None)
+
+
+def test_login_returns_the_access_token(
+    login_client: tuple[TestClient, Mock],
+) -> None:
+    client, controller = login_client
+
+    response = client.post("/api/v1/auth/login", json=REGISTER_BODY)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "access_token": "synthetic-access-token",
+        "token_type": "Bearer",
+        "expires_in": 900,
+    }
+    command = controller.call_args.args[0]
+    assert command.email == "Operator@example.com"
+    assert command.password == "Synthetic1"
+
+
+def test_login_openapi_documents_credential_and_status_failures() -> None:
+    schema = create_app(AppEnvironment.TESTING).openapi()
+    operation = schema["paths"]["/api/v1/auth/login"]["post"]
+
+    assert operation["summary"] == "Log in an accepted user"
+    assert "401" in operation["responses"]
+    assert "403" in operation["responses"]
+    assert "422" in operation["responses"]
+
+
+def test_login_maps_invalid_credentials(
+    login_client: tuple[TestClient, Mock],
+) -> None:
+    client, controller = login_client
+    controller.side_effect = InvalidCredentialsError("Invalid email or password.")
+
+    response = client.post("/api/v1/auth/login", json=REGISTER_BODY)
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid email or password."}
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "This account is waiting for approval.",
+        "This account was not approved.",
+        "This registration expired. Register again.",
+        "This account is not available.",
+    ],
+)
+def test_login_maps_accounts_that_are_not_accepted(
+    login_client: tuple[TestClient, Mock],
+    message: str,
+) -> None:
+    client, controller = login_client
+    controller.side_effect = AccountNotAcceptedError(message)
+
+    response = client.post("/api/v1/auth/login", json=REGISTER_BODY)
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": message}
+
+
+def test_login_maps_an_invalid_email(login_client: tuple[TestClient, Mock]) -> None:
+    client, controller = login_client
+    controller.side_effect = InvalidEmailAddressError(
+        "Invalid email address: synthetic"
+    )
+
+    response = client.post("/api/v1/auth/login", json=REGISTER_BODY)
+
+    assert response.status_code == 422
+    assert response.json()["detail"].startswith("Invalid email address:")
+
+
+def test_login_http_error_rejects_unmapped_errors() -> None:
+    with pytest.raises(TypeError, match="No HTTP mapping for RuntimeError"):
+        users._login_http_error(RuntimeError("unexpected"))
+
+
+def test_login_api_returns_a_token_for_an_accepted_user(
+    registration_client: tuple[TestClient, sessionmaker[Session]],
+    jwt_environment: None,
+) -> None:
+    client, factory = registration_client
+    created = client.post("/api/v1/auth/register", json=REGISTER_BODY)
+    created_id = created.json()["user"]["id"]
+    with factory() as session:
+        stored = session.scalar(select(UserModel))
+        assert stored is not None
+        stored.status = UserStatus.ACCEPTED
+        session.commit()
+
+    response = client.post("/api/v1/auth/login", json=REGISTER_BODY)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["token_type"] == "Bearer"
+    assert body["expires_in"] == 900
+    assert "password" not in body
+    decoded = decode_jwt(body["access_token"])
+    assert decoded["sub"] == created_id
+    assert decoded["role"] == "OPERATOR"
+    assert "email" not in decoded
+
+
+def test_login_api_wrong_password_does_not_reveal_a_pending_account(
+    registration_client: tuple[TestClient, sessionmaker[Session]],
+    jwt_environment: None,
+) -> None:
+    client, _factory = registration_client
+    client.post("/api/v1/auth/register", json=REGISTER_BODY)
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={**REGISTER_BODY, "password": "Synthetic2"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid email or password."}
+
+
+@pytest.mark.parametrize(
+    ("email", "password"),
+    [
+        ("Operator@Example.com", "Synthetic2"),
+        ("missing@example.com", "Synthetic1"),
+    ],
+)
+def test_login_api_uses_the_same_response_for_bad_credentials(
+    registration_client: tuple[TestClient, sessionmaker[Session]],
+    jwt_environment: None,
+    email: str,
+    password: str,
+) -> None:
+    client, factory = registration_client
+    client.post("/api/v1/auth/register", json=REGISTER_BODY)
+    with factory() as session:
+        stored = session.scalar(select(UserModel))
+        assert stored is not None
+        stored.status = UserStatus.ACCEPTED
+        session.commit()
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid email or password."}
+
+
+@pytest.mark.parametrize(
+    ("status", "message"),
+    [
+        (UserStatus.PENDING, "This account is waiting for approval."),
+        (UserStatus.REJECTED, "This account was not approved."),
+        (UserStatus.EXPIRED, "This registration expired. Register again."),
+        (UserStatus.DELETED, "This account is not available."),
+    ],
+)
+def test_login_api_rejects_accounts_that_are_not_accepted(
+    registration_client: tuple[TestClient, sessionmaker[Session]],
+    jwt_environment: None,
+    status: UserStatus,
+    message: str,
+) -> None:
+    client, factory = registration_client
+    client.post("/api/v1/auth/register", json=REGISTER_BODY)
+    with factory() as session:
+        stored = session.scalar(select(UserModel))
+        assert stored is not None
+        stored.status = status
+        session.commit()
+
+    response = client.post("/api/v1/auth/login", json=REGISTER_BODY)
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": message}

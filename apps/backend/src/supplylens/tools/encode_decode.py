@@ -12,4 +12,9 @@ def encode_jwt(payload: dict) -> str:
 
 def decode_jwt(token: str) -> dict:
     settings = get_jwt_settings()
-    return jwt.decode(token, settings.secret, algorithms=[ALGORITHM])
+    return jwt.decode(
+        token,
+        settings.secret,
+        algorithms=[ALGORITHM],
+        options={"require": ["exp", "sub", "role"]},
+    )

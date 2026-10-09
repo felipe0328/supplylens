@@ -14,9 +14,9 @@ class InvalidPasswordError(Exception):
     """Invalid password."""
 
 
-class UserNotFoundError(Exception):
-    """User not found."""
-
-
 class InvalidCredentialsError(Exception):
-    """Invalid credentials."""
+    """The email and password did not match an account."""
+
+
+class AccountNotAcceptedError(Exception):
+    """The account exists but cannot start a session."""

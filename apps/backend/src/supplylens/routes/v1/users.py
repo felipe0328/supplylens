@@ -5,11 +5,11 @@ from sqlalchemy.orm import Session
 
 from supplylens.adapters.persistence.users import UserPersistenceAdapter
 from supplylens.controllers.users.exceptions import (
+    AccountNotAcceptedError,
     InvalidCredentialsError,
     InvalidEmailAddressError,
     InvalidPasswordError,
     UserAlreadyExistsError,
-    UserNotFoundError,
     UserPendingError,
 )
 from supplylens.controllers.users.login_user import LoginUserCommand, login_user
@@ -35,11 +35,9 @@ _REGISTER_ERRORS = (
     InvalidPasswordError,
 )
 _LOGIN_ERRORS = (
-    UserNotFoundError,
-    InvalidPasswordError,
-    UserPendingError,
-    InvalidEmailAddressError,
     InvalidCredentialsError,
+    AccountNotAcceptedError,
+    InvalidEmailAddressError,
 )
 
 
@@ -59,23 +57,23 @@ def _register_http_error(error: Exception) -> HTTPException:
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(error),
         )
-    if isinstance(error, InvalidEmailAddressError):
-        return HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(error),
-        )
     raise TypeError(f"No HTTP mapping for {type(error).__name__}")
 
 
 def _login_http_error(error: Exception) -> HTTPException:
     if isinstance(error, InvalidCredentialsError):
         return HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(error),
         )
-    if isinstance(error, UserPendingError):
+    if isinstance(error, AccountNotAcceptedError):
         return HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(error),
+        )
+    if isinstance(error, InvalidEmailAddressError):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(error),
         )
     raise TypeError(f"No HTTP mapping for {type(error).__name__}")
@@ -152,8 +150,35 @@ def register(
 @auth_router.post(
     "/login",
     status_code=status.HTTP_200_OK,
-    summary="Login a user",
-    description="Logs in a user and returns a JWT token.",
+    summary="Log in an accepted user",
+    description=(
+        "Returns a short-lived JWT access token when the email and password match "
+        "an accepted account. An unknown email and a wrong password return the same "
+        "401. Pending, rejected, expired, and deleted accounts return 403."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "model": ErrorResponse,
+            "description": "The email or password is incorrect.",
+        },
+        status.HTTP_403_FORBIDDEN: {
+            "model": ErrorResponse,
+            "description": "The account is not accepted.",
+        },
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "description": "The email address does not meet the login rules.",
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "oneOf": [
+                            {"$ref": "#/components/schemas/ErrorResponse"},
+                            _VALIDATION_ERROR_SCHEMA,
+                        ]
+                    }
+                }
+            },
+        },
+    },
 )
 def login(
     request: LoginRequest,
