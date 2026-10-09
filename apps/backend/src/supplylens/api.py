@@ -25,6 +25,12 @@ def create_app(environment: AppEnvironment | None = None) -> FastAPI:
         version=version("supplylens"),
         openapi_tags=[
             {
+                "name": "Auth",
+                "description": (
+                    "Account registration. Registration does not start a session."
+                ),
+            },
+            {
                 "name": "Documents",
                 "description": (
                     "Create, upload, inspect, download, and delete supplier documents."

@@ -12,3 +12,7 @@ class UserStatus(enum.Enum):
     REJECTED = "REJECTED"
     EXPIRED = "EXPIRED"
     DELETED = "DELETED"
+
+
+class DuplicateUserEmailError(Exception):
+    """An insert used an email that is already stored."""
