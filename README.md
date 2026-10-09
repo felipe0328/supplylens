@@ -205,6 +205,9 @@ make fe-build
 # database migration checks
 make db-check
 make db-upgrade
+
+# local accepted admin, after migrations (reads ADMIN_USER_* from .env)
+make create-admin
 ```
 
 From `apps/backend`, plain `uv run pytest` uses the configured default test path

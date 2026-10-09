@@ -12,6 +12,7 @@ from supplylens.tools.encryption import hash_password
 
 from .exceptions import UserAlreadyExistsError, UserPendingError
 from .helpers import validate_email_address, validate_password
+from .mappers import map_port_user_to_controller_user
 
 
 @dataclass(frozen=True)
@@ -51,7 +52,7 @@ def register_user(
             ) from exc
         _raise_unless_reusable(current_user)
         return _retry_registration(current_user, request, persistence)
-    return RegisterUserCommandResult(user=_to_controller_user(user))
+    return RegisterUserCommandResult(user=map_port_user_to_controller_user(user))
 
 
 def _retry_registration(
@@ -64,7 +65,7 @@ def _retry_registration(
         if current_user is not None:
             _raise_unless_reusable(current_user)
         raise exc
-    return RegisterUserCommandResult(user=_to_controller_user(reused_user))
+    return RegisterUserCommandResult(user=map_port_user_to_controller_user(reused_user))
 
 
 def _create_request(email: str, password: str) -> CreateUserRequest:
@@ -81,20 +82,3 @@ def _raise_unless_reusable(existing_user: PortUser) -> None:
         raise UserAlreadyExistsError(
             "An account with this email already exists. Log in instead."
         )
-
-
-def _to_controller_user(user: PortUser) -> User:
-    accepted_by = None
-    if user.accepted_by is not None:
-        accepted_by = _to_controller_user(user.accepted_by)
-    return User(
-        id=user.id,
-        email=user.email,
-        role=user.role,
-        status=user.status,
-        accepted_by=accepted_by,
-        pending_expires_at=user.pending_expires_at,
-        created_at=user.created_at,
-        updated_at=user.updated_at,
-        deleted_at=user.deleted_at,
-    )

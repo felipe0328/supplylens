@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help setup hooks hooks-uninstall fe fe-install fe-build fe-lint be be-install be-check be-lint be-test be-test-integration version-test check db-revision db-upgrade db-downgrade db-current db-history db-check docker-start docker-stop docker-status docker-logs docker-test-start docker-test-stop docker-test-storage-start docker-test-storage-stop pre-commit
+.PHONY: help setup hooks hooks-uninstall fe fe-install fe-build fe-lint be be-install be-check be-lint be-test be-test-integration version-test check db-revision db-upgrade db-downgrade db-current db-history db-check create-admin docker-start docker-stop docker-status docker-logs docker-test-start docker-test-stop docker-test-storage-start docker-test-storage-stop pre-commit
 
 help: ## Show available commands
 	@echo "SupplyLens development commands:"
@@ -17,6 +17,7 @@ help: ## Show available commands
 	@echo "  make check ....................... Run backend and frontend checks"
 	@echo "  make db-revision msg=... ......... Create an autogenerate migration"
 	@echo "  make db-upgrade .................. Apply all pending migrations"
+	@echo "  make create-admin ................ Create the local accepted admin user"
 	@echo "  make db-downgrade ................ Roll back one migration"
 	@echo "  make db-current .................. Show the current migration revision"
 	@echo "  make db-history .................. Show migration history"
@@ -83,6 +84,9 @@ db-revision: ## Create an autogenerate migration (use msg="...")
 
 db-upgrade: ## Apply all pending Alembic migrations
 	cd apps/backend && uv run alembic upgrade head
+
+create-admin: ## Create the local accepted admin from ADMIN_USER_EMAIL and ADMIN_USER_PASSWORD
+	uv run --project apps/backend python scripts/create_admin_user.py
 
 db-downgrade: ## Roll back the latest Alembic migration
 	cd apps/backend && uv run alembic downgrade -1
