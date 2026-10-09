@@ -21,15 +21,15 @@ def _required_trimmed(value: str, name: str) -> str:
     return trimmed
 
 
-def _ttl_seconds(value: str | int, name: str) -> int:
+def _ttl_seconds(value: str | int, name: str, *, maximum: int = 604800) -> int:
     if type(value) is not int and not isinstance(value, str):
         raise ValueError(f"{name} must be an integer.")
     try:
         seconds = int(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{name} must be an integer.") from exc
-    if not 1 <= seconds <= 604800:
-        raise ValueError(f"{name} must be between 1 and 604800 seconds.")
+    if not 1 <= seconds <= maximum:
+        raise ValueError(f"{name} must be between 1 and {maximum} seconds.")
     return seconds
 
 
@@ -127,3 +127,37 @@ def get_app_environment() -> AppEnvironment:
         raise ValueError(
             "APP_ENV must be 'development', 'test', or 'production'."
         ) from exc
+
+
+@dataclass(frozen=True)
+class JWTSettings:
+    secret: str
+    access_ttl_seconds: int
+
+    def __post_init__(self) -> None:
+        secret = _required_trimmed(self.secret, "JWT_SECRET")
+        if len(secret) < 32:
+            raise ValueError("JWT_SECRET must be at least 32 characters.")
+        object.__setattr__(self, "secret", secret)
+        object.__setattr__(
+            self,
+            "access_ttl_seconds",
+            _ttl_seconds(
+                self.access_ttl_seconds,
+                "JWT_ACCESS_TTL_SECONDS",
+                maximum=3600,
+            ),
+        )
+
+
+__jwt_settings: JWTSettings | None = None
+
+
+def get_jwt_settings() -> JWTSettings:
+    global __jwt_settings
+    if __jwt_settings is None:
+        __jwt_settings = JWTSettings(
+            secret=os.getenv("JWT_SECRET", ""),
+            access_ttl_seconds=os.getenv("JWT_ACCESS_TTL_SECONDS", "900"),
+        )
+    return __jwt_settings

@@ -2,7 +2,13 @@ from dataclasses import replace
 
 import pytest
 
-from supplylens.config import AppEnvironment, StorageSettings, get_app_environment
+from supplylens.config import (
+    AppEnvironment,
+    JWTSettings,
+    StorageSettings,
+    get_app_environment,
+    get_jwt_settings,
+)
 
 
 @pytest.fixture
@@ -173,3 +179,67 @@ def test_application_environment_rejects_unknown_value_with_cause(
     with pytest.raises(ValueError, match="APP_ENV must be") as raised:
         get_app_environment()
     assert isinstance(raised.value.__cause__, ValueError)
+
+
+@pytest.fixture
+def reset_jwt_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("supplylens.config.__jwt_settings", None)
+
+
+def test_jwt_settings_load_a_trimmed_secret_and_default_ttl(
+    reset_jwt_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET", "  synthetic-jwt-secret-with-32-characters  ")
+    monkeypatch.delenv("JWT_ACCESS_TTL_SECONDS", raising=False)
+
+    settings = get_jwt_settings()
+
+    assert settings.secret == "synthetic-jwt-secret-with-32-characters"
+    assert settings.access_ttl_seconds == 900
+    assert get_jwt_settings() is settings
+
+
+def test_jwt_settings_parse_a_custom_ttl(
+    reset_jwt_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET", "synthetic-jwt-secret-with-32-characters")
+    monkeypatch.setenv("JWT_ACCESS_TTL_SECONDS", "3600")
+
+    assert get_jwt_settings().access_ttl_seconds == 3600
+
+
+@pytest.mark.parametrize(
+    ("secret", "ttl", "message"),
+    [
+        ("", "900", "JWT_SECRET must not be blank"),
+        ("   ", "900", "JWT_SECRET must not be blank"),
+        ("too-short", "900", "JWT_SECRET must be at least 32 characters"),
+        ("synthetic-jwt-secret-with-32-characters", "soon", "must be an integer"),
+        ("synthetic-jwt-secret-with-32-characters", "0", "between 1 and 3600"),
+        ("synthetic-jwt-secret-with-32-characters", "3601", "between 1 and 3600"),
+        (
+            "synthetic-jwt-secret-with-32-characters",
+            "604801",
+            "between 1 and 3600",
+        ),
+    ],
+)
+def test_jwt_settings_reject_invalid_configuration(
+    reset_jwt_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+    secret: str,
+    ttl: str,
+    message: str,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET", secret)
+    monkeypatch.setenv("JWT_ACCESS_TTL_SECONDS", ttl)
+
+    with pytest.raises(ValueError, match=message):
+        get_jwt_settings()
+
+
+def test_jwt_settings_constructor_rejects_a_short_secret() -> None:
+    with pytest.raises(ValueError, match="JWT_SECRET must be at least 32 characters"):
+        JWTSettings(secret="too-short", access_ttl_seconds=900)

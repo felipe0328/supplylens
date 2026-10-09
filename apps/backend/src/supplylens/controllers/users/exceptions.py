@@ -12,3 +12,11 @@ class InvalidEmailAddressError(Exception):
 
 class InvalidPasswordError(Exception):
     """Invalid password."""
+
+
+class InvalidCredentialsError(Exception):
+    """The email and password did not match an account."""
+
+
+class AccountNotAcceptedError(Exception):
+    """The account exists but cannot start a session."""
