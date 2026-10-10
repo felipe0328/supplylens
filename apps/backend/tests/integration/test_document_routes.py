@@ -3,12 +3,14 @@ from __future__ import annotations
 import os
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TypedDict, cast
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import boto3
+import jwt
 import pytest
 from alembic.config import Config
 from fastapi.testclient import TestClient
@@ -24,6 +26,8 @@ DEFAULT_TEST_DATABASE_URL = (
     "postgresql+psycopg://supplylens:localdev@127.0.0.1:5434/supplylens_test"
 )
 PDF_BYTES = b"%PDF-1.4\nSupplyLens synthetic integration fixture\n%%EOF\n"
+JWT_SECRET = "synthetic-jwt-secret-with-32-characters"
+ACCESS_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
 
 class UploadInstructions(TypedDict):
@@ -86,10 +90,23 @@ def document_api_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]
     monkeypatch.setenv("S3_ACCESS_KEY_ID", access_key_id)
     monkeypatch.setenv("S3_SECRET_ACCESS_KEY", secret_access_key)
     monkeypatch.setenv("S3_REGION", region)
+    monkeypatch.setenv("JWT_SECRET", JWT_SECRET)
+    monkeypatch.setattr("supplylens.config.__jwt_settings", None)
 
     app = create_app(AppEnvironment.TESTING)
+    access_token = jwt.encode(
+        {
+            "sub": ACCESS_USER_ID,
+            "role": "OPERATOR",
+            "exp": datetime.now(UTC) + timedelta(minutes=15),
+        },
+        JWT_SECRET,
+        algorithm="HS256",
+    )
     try:
-        with TestClient(app) as test_client:
+        with TestClient(
+            app, headers={"Authorization": f"Bearer {access_token}"}
+        ) as test_client:
             yield test_client
     finally:
         objects = client.list_objects_v2(Bucket=bucket).get("Contents", [])
@@ -162,6 +179,23 @@ def uploaded_document(
         uploaded_at=uploaded_at,
         download_url=download_url,
     )
+
+
+@pytest.mark.integration
+def test_document_creation_requires_an_access_token(
+    document_api_client: TestClient,
+) -> None:
+    response = TestClient(document_api_client.app).post(
+        "/api/v1/documents/uploads",
+        json={
+            "filename": "synthetic-invoice.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": len(PDF_BYTES),
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not authenticated"}
 
 
 @pytest.mark.integration

@@ -1,8 +1,9 @@
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 from uuid import UUID
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, event, func, select
@@ -51,6 +52,8 @@ from supplylens.routes.v1.dependencies import (
 from supplylens.routes.v1.documents import to_document_schema
 
 DOCUMENT_ID = UUID("12345678-1234-5678-1234-567812345678")
+JWT_SECRET = "synthetic-jwt-secret-with-32-characters"
+ACCESS_USER_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
 UPLOAD_REQUEST = {
     "filename": "invoice.pdf",
     "content_type": "application/pdf",
@@ -58,14 +61,35 @@ UPLOAD_REQUEST = {
 }
 
 
+def _bearer_headers() -> dict[str, str]:
+    token = jwt.encode(
+        {
+            "sub": str(ACCESS_USER_ID),
+            "role": "OPERATOR",
+            "exp": datetime.now(UTC) + timedelta(minutes=15),
+        },
+        JWT_SECRET,
+        algorithm="HS256",
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
 @pytest.fixture
-def upload_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Mock]:
+def jwt_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("JWT_SECRET", JWT_SECRET)
+    monkeypatch.setattr("supplylens.config.__jwt_settings", None)
+
+
+@pytest.fixture
+def upload_client(
+    monkeypatch: pytest.MonkeyPatch, jwt_environment: None
+) -> tuple[TestClient, Mock]:
     app = create_app(AppEnvironment.TESTING)
     app.dependency_overrides[get_document_persistence] = lambda: Mock()
     app.dependency_overrides[get_object_storage] = lambda: Mock()
     controller = Mock()
     monkeypatch.setattr(documents, "create_upload_intent_controller", controller)
-    return TestClient(app), controller
+    return TestClient(app, headers=_bearer_headers()), controller
 
 
 def test_create_upload_intent_returns_created(
@@ -185,6 +209,7 @@ def test_create_upload_intent_does_not_treat_configuration_errors_as_client_erro
 )
 def test_storage_configuration_errors_return_service_unavailable(
     monkeypatch: pytest.MonkeyPatch,
+    jwt_environment: None,
     method: str,
     path: str,
 ) -> None:
@@ -195,7 +220,7 @@ def test_storage_configuration_errors_return_service_unavailable(
         "supplylens.routes.v1.dependencies.StorageAdapter",
         Mock(side_effect=ValueError("invalid storage configuration")),
     )
-    client = TestClient(app)
+    client = TestClient(app, headers=_bearer_headers())
 
     response = client.request(
         method,
@@ -210,6 +235,7 @@ def test_storage_configuration_errors_return_service_unavailable(
 @pytest.fixture
 def document_client(
     monkeypatch: pytest.MonkeyPatch,
+    jwt_environment: None,
 ) -> tuple[TestClient, dict[str, Mock]]:
     app = create_app(AppEnvironment.TESTING)
     app.dependency_overrides[get_document_persistence] = lambda: Mock()
@@ -229,7 +255,7 @@ def document_client(
         documents, "get_document_url_controller", controllers["download_url"]
     )
     monkeypatch.setattr(documents, "delete_document_controller", controllers["delete"])
-    return TestClient(app), controllers
+    return TestClient(app, headers=_bearer_headers()), controllers
 
 
 def _stored_document() -> StoredDocument:
@@ -271,6 +297,34 @@ def test_report_upload_completed_returns_mapped_document(
         }
     }
     controllers["complete"].assert_called_once()
+
+
+def test_document_routes_reject_a_missing_access_token(
+    upload_client: tuple[TestClient, Mock],
+) -> None:
+    client, controller = upload_client
+
+    response = TestClient(client.app).post(
+        "/api/v1/documents/uploads", json=UPLOAD_REQUEST
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not authenticated"}
+    assert response.headers["www-authenticate"] == "Bearer"
+    controller.assert_not_called()
+
+
+def test_document_openapi_requires_a_bearer_token() -> None:
+    schema = create_app(AppEnvironment.TESTING).openapi()
+
+    assert schema["components"]["securitySchemes"]["HTTPBearer"]["scheme"] == "bearer"
+    for path, methods in schema["paths"].items():
+        if not path.startswith("/api/v1/documents"):
+            continue
+        for operation in methods.values():
+            if not isinstance(operation, dict) or "responses" not in operation:
+                continue
+            assert operation["security"] == [{"HTTPBearer": []}]
 
 
 def test_document_openapi_lists_storage_failures_only_for_storage_operations() -> None:
@@ -443,6 +497,7 @@ def test_delete_document_maps_storage_unavailable(
 @pytest.fixture
 def completion_transaction_client(
     monkeypatch: pytest.MonkeyPatch,
+    jwt_environment: None,
 ) -> Iterator[tuple[TestClient, Engine]]:
     # Exercise request transaction handling without external database/storage services.
     # SQLite does not exercise PostgreSQL's row-lock concurrency guarantees.
@@ -465,7 +520,7 @@ def completion_transaction_client(
             f"documents/{DOCUMENT_ID}/original.pdf", 512, "application/pdf", None
         )
         app.dependency_overrides[get_object_storage] = lambda: storage
-        with TestClient(app) as client:
+        with TestClient(app, headers=_bearer_headers()) as client:
             yield client, engine
     finally:
         engine.dispose()
@@ -689,7 +744,11 @@ def test_completion_commit_failure_is_not_a_successful_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client, engine = completion_transaction_client
-    failing_client = TestClient(client.app, raise_server_exceptions=False)
+    failing_client = TestClient(
+        client.app,
+        headers=_bearer_headers(),
+        raise_server_exceptions=False,
+    )
     monkeypatch.setattr(SessionTransaction, "commit", _fail_session_commit)
 
     response = failing_client.post(f"/api/v1/documents/{DOCUMENT_ID}/complete")
@@ -707,7 +766,11 @@ def test_completion_commit_failure_after_mismatch_is_not_a_mismatch_response(
 ) -> None:
     client, engine = completion_transaction_client
     _completion_storage(client, size_bytes=511, content_type="application/pdf")
-    failing_client = TestClient(client.app, raise_server_exceptions=False)
+    failing_client = TestClient(
+        client.app,
+        headers=_bearer_headers(),
+        raise_server_exceptions=False,
+    )
     monkeypatch.setattr(SessionTransaction, "commit", _fail_session_commit)
 
     response = failing_client.post(f"/api/v1/documents/{DOCUMENT_ID}/complete")
@@ -721,6 +784,7 @@ def test_completion_commit_failure_after_mismatch_is_not_a_mismatch_response(
 
 def test_storage_construction_failure_does_not_run_the_controller(
     monkeypatch: pytest.MonkeyPatch,
+    jwt_environment: None,
 ) -> None:
     engine = create_engine(
         "sqlite://",
@@ -753,7 +817,9 @@ def test_storage_construction_failure_does_not_run_the_controller(
         )
         controller = Mock()
         monkeypatch.setattr(documents, "report_upload_completed_controller", controller)
-        client = TestClient(create_app(AppEnvironment.TESTING))
+        client = TestClient(
+            create_app(AppEnvironment.TESTING), headers=_bearer_headers()
+        )
 
         response = client.post(f"/api/v1/documents/{DOCUMENT_ID}/complete")
     finally:
