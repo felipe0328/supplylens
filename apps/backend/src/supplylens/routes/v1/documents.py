@@ -40,6 +40,7 @@ from supplylens.port.storage.storage import (
     StorageUnavailableError,
     UploadTooLargeError,
 )
+from supplylens.routes.v1.dependencies import require_access_token
 from supplylens.schemas.documents import (
     CreateUploadIntentRequest,
     CreateUploadIntentResponse,
@@ -57,7 +58,11 @@ from .dependencies import (
 )
 from .errors import error_responses, http_error_response
 
-documents_router = APIRouter(prefix="/documents", tags=["Documents"])
+documents_router = APIRouter(
+    prefix="/documents",
+    tags=["Documents"],
+    dependencies=[Depends(require_access_token)],
+)
 
 
 def to_document_schema(document: StoredDocument) -> Document:
