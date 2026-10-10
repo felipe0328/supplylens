@@ -10,6 +10,7 @@ from supplylens.port.persistence.users import (
 from supplylens.port.persistence.users import User as PortUser
 from supplylens.tools.encryption import hash_password
 
+from .constants import ACCOUNT_ALREADY_EXISTS, EMAIL_PENDING
 from .exceptions import UserAlreadyExistsError, UserPendingError
 from .mappers import map_port_user_to_controller_user
 from .validation import validate_email_address, validate_password
@@ -47,9 +48,7 @@ def register_user(
     except DuplicateUserEmailError as exc:
         current_user = persistence.get_user_by_email(validated_email)
         if current_user is None:
-            raise UserAlreadyExistsError(
-                "An account with this email already exists. Log in instead."
-            ) from exc
+            raise UserAlreadyExistsError(ACCOUNT_ALREADY_EXISTS) from exc
         _raise_unless_reusable(current_user)
         return _retry_registration(current_user, request, persistence)
     return RegisterUserCommandResult(user=map_port_user_to_controller_user(user))
@@ -77,8 +76,6 @@ def _create_request(email: str, password: str) -> CreateUserRequest:
 
 def _raise_unless_reusable(existing_user: PortUser) -> None:
     if is_unexpired_pending(existing_user.status, existing_user.pending_expires_at):
-        raise UserPendingError("This email is already waiting for approval.")
+        raise UserPendingError(EMAIL_PENDING)
     if existing_user.status is UserStatus.ACCEPTED:
-        raise UserAlreadyExistsError(
-            "An account with this email already exists. Log in instead."
-        )
+        raise UserAlreadyExistsError(ACCOUNT_ALREADY_EXISTS)

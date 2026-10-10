@@ -20,3 +20,7 @@ class InvalidCredentialsError(Exception):
 
 class AccountNotAcceptedError(Exception):
     """The account exists but cannot start a session."""
+
+
+class InvalidOrExpiredRefreshTokenError(Exception):
+    """The refresh token is invalid or expired."""

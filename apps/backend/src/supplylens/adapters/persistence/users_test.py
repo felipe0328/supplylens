@@ -66,6 +66,21 @@ def test_get_user_by_email_returns_none_when_the_email_is_missing(
     )
 
 
+def test_get_user_by_id_returns_the_stored_user(session: Session) -> None:
+    adapter = UserPersistenceAdapter(session)
+    created = adapter.create_user(_request())
+
+    loaded = adapter.get_user_by_id(created.id)
+
+    assert loaded is not None
+    assert loaded.id == created.id
+    assert loaded.email == "operator@example.com"
+
+
+def test_get_user_by_id_returns_none_when_the_user_is_missing(session: Session) -> None:
+    assert UserPersistenceAdapter(session).get_user_by_id(USER_ID) is None
+
+
 def test_get_user_by_email_includes_the_accepting_user(session: Session) -> None:
     adapter = UserPersistenceAdapter(session)
     approver = adapter.create_user(_request("admin@example.com"))

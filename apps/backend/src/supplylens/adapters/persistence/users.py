@@ -110,6 +110,12 @@ class UserPersistenceAdapter(UserPersistence):
             return None
         return self._map_user(user)
 
+    def get_user_by_id(self, id: UUID) -> User | None:
+        user = self._session.get(UserModel, id)
+        if user is None:
+            return None
+        return self._map_user(user)
+
     def update_user_email(self, id: UUID, email: str) -> User:
         existing_user = self._session.get(UserModel, id, with_for_update=True)
         if existing_user is None:
