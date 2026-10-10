@@ -7,11 +7,15 @@ from supplylens.adapters.persistence.documents import DocumentPersistenceAdapter
 from supplylens.adapters.persistence.processing_job import (
     ProcessingJobPersistenceAdapter,
 )
+from supplylens.adapters.persistence.refresh_tokens import (
+    RefreshTokenPersistenceAdapter,
+)
 from supplylens.adapters.persistence.users import UserPersistenceAdapter
 from supplylens.adapters.storage.storage import StorageAdapter
 from supplylens.database.database import get_session
 from supplylens.port.persistence.documents import DocumentPersistence
 from supplylens.port.persistence.processing_job import ProcessingJobPersistence
+from supplylens.port.persistence.refresh_token import RefreshTokenPersistence
 from supplylens.port.persistence.users import UserPersistence
 from supplylens.port.storage.storage import ObjectStorage, StorageUnavailableError
 
@@ -20,6 +24,12 @@ SessionDependency = Annotated[Session, Depends(get_session, scope="function")]
 
 def get_user_persistence(session: SessionDependency) -> UserPersistence:
     return UserPersistenceAdapter(session=session)
+
+
+def get_refresh_token_persistence(
+    session: SessionDependency,
+) -> RefreshTokenPersistence:
+    return RefreshTokenPersistenceAdapter(session=session)
 
 
 def get_document_persistence(session: SessionDependency) -> DocumentPersistence:

@@ -192,11 +192,13 @@ def test_jwt_settings_load_a_trimmed_secret_and_default_ttl(
 ) -> None:
     monkeypatch.setenv("JWT_SECRET", "  synthetic-jwt-secret-with-32-characters  ")
     monkeypatch.delenv("JWT_ACCESS_TTL_SECONDS", raising=False)
+    monkeypatch.delenv("JWT_REFRESH_TTL_SECONDS", raising=False)
 
     settings = get_jwt_settings()
 
     assert settings.secret == "synthetic-jwt-secret-with-32-characters"
     assert settings.access_ttl_seconds == 900
+    assert settings.refresh_ttl_seconds == 604800
     assert get_jwt_settings() is settings
 
 
@@ -242,4 +244,8 @@ def test_jwt_settings_reject_invalid_configuration(
 
 def test_jwt_settings_constructor_rejects_a_short_secret() -> None:
     with pytest.raises(ValueError, match="JWT_SECRET must be at least 32 characters"):
-        JWTSettings(secret="too-short", access_ttl_seconds=900)
+        JWTSettings(
+            secret="too-short",
+            access_ttl_seconds=900,
+            refresh_ttl_seconds=604800,
+        )

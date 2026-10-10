@@ -1,4 +1,4 @@
 interface:
   display_name: "Create Draft PR"
-  short_description: "Validate changes and open a draft GitHub PR"
+  short_description: "Open a draft PR linked to its task"
   default_prompt: "Use $create-pr to validate this branch and open a draft GitHub pull request."

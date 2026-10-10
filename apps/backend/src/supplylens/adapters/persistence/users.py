@@ -16,6 +16,7 @@ from supplylens.port.persistence.users import (
 )
 
 from .mappers import map_model_user_to_abstraction
+from .refresh_tokens import revoke_refresh_tokens_for_user
 
 
 def _require_user(user: User | None) -> User:
@@ -81,6 +82,7 @@ class UserPersistenceAdapter(UserPersistence):
             existing_user.deleted_at = None
 
         self._flush_unique_email(user.email, _reopen_account)
+        revoke_refresh_tokens_for_user(self._session, user_id)
         return self._map_user(existing_user)
 
     def retry_user_creation(self, user_id: UUID, user: CreateUserRequest) -> User:
@@ -102,10 +104,17 @@ class UserPersistenceAdapter(UserPersistence):
             existing_user.deleted_at = None
 
         self._flush_unique_email(user.email, _reopen_account)
+        revoke_refresh_tokens_for_user(self._session, user_id)
         return self._map_user(existing_user)
 
     def get_user_by_email(self, email: str) -> User | None:
         user = self._session.scalar(select(UserModel).where(UserModel.email == email))
+        if user is None:
+            return None
+        return self._map_user(user)
+
+    def get_user_by_id(self, id: UUID) -> User | None:
+        user = self._session.get(UserModel, id)
         if user is None:
             return None
         return self._map_user(user)
@@ -142,6 +151,8 @@ class UserPersistenceAdapter(UserPersistence):
             user.pending_expires_at = datetime.now(UTC) + timedelta(days=2)
         else:
             user.pending_expires_at = None
+        if status is not UserStatus.ACCEPTED:
+            revoke_refresh_tokens_for_user(self._session, id)
         self._session.flush()
         return self._map_user(user)
 
@@ -164,6 +175,7 @@ class UserPersistenceAdapter(UserPersistence):
         user.deleted_at = func.now()
         user.status = UserStatus.DELETED
         user.pending_expires_at = None
+        revoke_refresh_tokens_for_user(self._session, id)
         self._session.flush()
 
     def _map_user(self, model_user: UserModel) -> User:

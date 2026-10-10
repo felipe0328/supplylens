@@ -12,6 +12,7 @@ from supplylens.adapters.persistence.users import (
 )
 from supplylens.database.database import Base
 from supplylens.domain.users import DuplicateUserEmailError, UserRole, UserStatus
+from supplylens.models.refresh_token import RefreshToken
 from supplylens.models.user import User as UserModel
 from supplylens.port.persistence.users import CreateUserRequest
 
@@ -31,6 +32,17 @@ def session() -> Iterator[Session]:
 
 def _request(email: str = "operator@example.com") -> CreateUserRequest:
     return CreateUserRequest(email=email, password_hash="synthetic-hash")
+
+
+def _store_refresh_token(session: Session, user_id: UUID, hashed_token: str) -> int:
+    token = RefreshToken(
+        user_id=user_id,
+        hashed_token=hashed_token,
+        expires_at=datetime(2099, 1, 1, tzinfo=UTC),
+    )
+    session.add(token)
+    session.flush()
+    return token.id
 
 
 def _accept_as_admin(session: Session, user_id: UUID) -> None:
@@ -64,6 +76,21 @@ def test_get_user_by_email_returns_none_when_the_email_is_missing(
     assert (
         UserPersistenceAdapter(session).get_user_by_email("missing@example.com") is None
     )
+
+
+def test_get_user_by_id_returns_the_stored_user(session: Session) -> None:
+    adapter = UserPersistenceAdapter(session)
+    created = adapter.create_user(_request())
+
+    loaded = adapter.get_user_by_id(created.id)
+
+    assert loaded is not None
+    assert loaded.id == created.id
+    assert loaded.email == "operator@example.com"
+
+
+def test_get_user_by_id_returns_none_when_the_user_is_missing(session: Session) -> None:
+    assert UserPersistenceAdapter(session).get_user_by_id(USER_ID) is None
 
 
 def test_get_user_by_email_includes_the_accepting_user(session: Session) -> None:
@@ -268,6 +295,11 @@ def test_change_user_approval_status_records_the_admin(session: Session) -> None
     assert stored is not None
     assert stored.accepted_by == admin.id
     assert stored.pending_expires_at is None
+    token_id = _store_refresh_token(session, operator.id, "synthetic-hash-accepted")
+    adapter.change_user_approval_status(operator.id, admin.id, UserStatus.ACCEPTED)
+    token = session.get(RefreshToken, token_id)
+    assert token is not None
+    assert token.revoked_at is None
 
 
 def test_change_user_approval_status_reopens_a_pending_window(session: Session) -> None:
@@ -477,6 +509,55 @@ def test_delete_user_marks_the_account_deleted(session: Session) -> None:
     assert stored.pending_expires_at is None
 
 
+def test_delete_user_revokes_that_accounts_refresh_tokens(session: Session) -> None:
+    adapter = UserPersistenceAdapter(session)
+    admin = adapter.create_user(_request("admin@example.com"))
+    _accept_as_admin(session, admin.id)
+    created = adapter.create_user(_request())
+    revoked_id = _store_refresh_token(session, created.id, "synthetic-hash-deleted")
+    kept_id = _store_refresh_token(session, admin.id, "synthetic-hash-admin")
+
+    adapter.delete_user(created.id, admin.id)
+
+    revoked = session.get(RefreshToken, revoked_id)
+    kept = session.get(RefreshToken, kept_id)
+    assert revoked is not None and revoked.revoked_at is not None
+    assert kept is not None and kept.revoked_at is None
+
+
+def test_retry_user_creation_revokes_refresh_tokens_from_the_previous_account(
+    session: Session,
+) -> None:
+    adapter = UserPersistenceAdapter(session)
+    created = adapter.create_user(_request())
+    stored = session.get(UserModel, created.id)
+    assert stored is not None
+    stored.status = UserStatus.DELETED
+    token_id = _store_refresh_token(session, created.id, "synthetic-hash-previous")
+
+    adapter.retry_user_creation(created.id, _request())
+
+    token = session.get(RefreshToken, token_id)
+    assert token is not None
+    assert token.revoked_at is not None
+
+
+def test_change_user_approval_status_revokes_refresh_tokens_when_not_accepted(
+    session: Session,
+) -> None:
+    adapter = UserPersistenceAdapter(session)
+    admin = adapter.create_user(_request("admin@example.com"))
+    _accept_as_admin(session, admin.id)
+    operator = adapter.create_user(_request())
+    token_id = _store_refresh_token(session, operator.id, "synthetic-hash-rejected")
+
+    adapter.change_user_approval_status(operator.id, admin.id, UserStatus.REJECTED)
+
+    token = session.get(RefreshToken, token_id)
+    assert token is not None
+    assert token.revoked_at is not None
+
+
 def test_delete_user_missing_id_raises(session: Session) -> None:
     with pytest.raises(ValueError, match="not found"):
         UserPersistenceAdapter(session).delete_user(USER_ID, USER_ID)
@@ -536,6 +617,7 @@ def test_retry_super_admin_creation_promotes_the_existing_row(session: Session) 
     stored.deleted_at = datetime.now(UTC)
     stored.accepted_by = created.id
     session.flush()
+    token_id = _store_refresh_token(session, created.id, "synthetic-hash-admin")
 
     retried = adapter.retry_super_admin_creation(
         created.id,
@@ -550,6 +632,9 @@ def test_retry_super_admin_creation_promotes_the_existing_row(session: Session) 
     assert retried.pending_expires_at is None
     assert retried.deleted_at is None
     assert session.scalar(select(func.count()).select_from(UserModel)) == 1
+    token = session.get(RefreshToken, token_id)
+    assert token is not None
+    assert token.revoked_at is not None
 
 
 def test_retry_super_admin_creation_missing_id_raises(session: Session) -> None:
