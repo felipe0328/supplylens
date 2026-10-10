@@ -26,11 +26,16 @@ from supplylens.controllers.users.types import User as ControllerUser
 from supplylens.database import database
 from supplylens.database.database import Base
 from supplylens.domain.users import UserRole, UserStatus
+from supplylens.models.refresh_token import RefreshToken as RefreshTokenModel
 from supplylens.models.user import User as UserModel
 from supplylens.routes.v1 import auth
-from supplylens.routes.v1.dependencies import get_user_persistence
+from supplylens.routes.v1.dependencies import (
+    get_refresh_token_persistence,
+    get_user_persistence,
+)
 from supplylens.tools.encode_decode import decode_jwt
 from supplylens.tools.encryption import verify_password
+from supplylens.tools.token_hash import hash_token
 
 USER_ID = UUID("12345678-1234-5678-1234-567812345678")
 CREATED_AT = datetime(2026, 10, 7, 12, 0, tzinfo=UTC)
@@ -366,9 +371,11 @@ JWT_SECRET = "synthetic-jwt-secret-with-32-characters"
 def login_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Mock]:
     app = create_app(AppEnvironment.TESTING)
     app.dependency_overrides[get_user_persistence] = lambda: Mock()
+    app.dependency_overrides[get_refresh_token_persistence] = lambda: Mock()
     controller = Mock(
         return_value=LoginUserCommandResult(
             access_token="synthetic-access-token",
+            refresh_token="synthetic-refresh-token",
             token_type="Bearer",
             expires_in=900,
         )
@@ -394,6 +401,7 @@ def test_login_returns_the_access_token(
     assert response.status_code == 200
     assert response.json() == {
         "access_token": "synthetic-access-token",
+        "refresh_token": "synthetic-refresh-token",
         "token_type": "Bearer",
         "expires_in": 900,
     }
@@ -483,6 +491,11 @@ def test_login_api_returns_a_token_for_an_accepted_user(
     assert decoded["sub"] == created_id
     assert decoded["role"] == "OPERATOR"
     assert "email" not in decoded
+    with factory() as session:
+        stored_token = session.scalar(select(RefreshTokenModel))
+    assert stored_token is not None
+    assert stored_token.hashed_token == hash_token(body["refresh_token"])
+    assert stored_token.hashed_token != body["refresh_token"]
 
 
 def test_login_api_wrong_password_does_not_reveal_a_pending_account(

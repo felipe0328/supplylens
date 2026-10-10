@@ -14,14 +14,20 @@ from supplylens.controllers.users.exceptions import (
 )
 from supplylens.controllers.users.login_user import LoginUserCommand, login_user
 from supplylens.domain.users import UserRole, UserStatus
+from supplylens.port.persistence.refresh_token import (
+    RefreshToken,
+    StoreRefreshTokenRequest,
+)
 from supplylens.port.persistence.users import User as PortUser
 from supplylens.tools.encryption import hash_password, verify_password
+from supplylens.tools.token_hash import hash_token
 
 USER_ID = UUID("12345678-1234-5678-1234-567812345678")
 CREATED_AT = datetime(2026, 10, 7, tzinfo=UTC)
 PASSWORD = "Synthetic1"
 JWT_SECRET = "synthetic-jwt-secret-with-32-characters"
 ACCESS_TTL_SECONDS = 900
+REFRESH_TTL_SECONDS = 604800
 
 
 class FakeUserPersistence:
@@ -38,6 +44,22 @@ class FakeUserPersistence:
         self.updated.append((user_id, password_hash))
         assert self._existing is not None
         return self._existing
+
+
+class FakeRefreshTokenPersistence:
+    def __init__(self) -> None:
+        self.stored: list[StoreRefreshTokenRequest] = []
+
+    def store_refresh_token(self, request: StoreRefreshTokenRequest) -> RefreshToken:
+        self.stored.append(request)
+        return RefreshToken(
+            id=len(self.stored),
+            user_id=request.user_id,
+            hashed_token=request.hashed_token,
+            expires_at=request.expires_at,
+            revoked_at=None,
+            replaced_by=None,
+        )
 
 
 def _user(**overrides: object) -> PortUser:
@@ -68,7 +90,11 @@ def _command(**overrides: object) -> LoginUserCommand:
 
 @pytest.fixture
 def jwt_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = JWTSettings(secret=JWT_SECRET, access_ttl_seconds=ACCESS_TTL_SECONDS)
+    settings = JWTSettings(
+        secret=JWT_SECRET,
+        access_ttl_seconds=ACCESS_TTL_SECONDS,
+        refresh_ttl_seconds=REFRESH_TTL_SECONDS,
+    )
     monkeypatch.setattr(
         "supplylens.controllers.users.login_user.get_jwt_settings",
         lambda: settings,
@@ -81,13 +107,23 @@ def jwt_settings(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_login_user_returns_a_short_lived_access_token(jwt_settings: None) -> None:
     persistence = FakeUserPersistence(_user())
+    refresh_tokens = FakeRefreshTokenPersistence()
     before = datetime.now(UTC)
 
-    result = login_user(_command(), persistence)
+    result = login_user(_command(), persistence, refresh_tokens)
 
     assert result.token_type == "Bearer"
     assert result.expires_in == ACCESS_TTL_SECONDS
     assert persistence.updated == []
+    assert len(refresh_tokens.stored) == 1
+    stored = refresh_tokens.stored[0]
+    assert stored.user_id == USER_ID
+    assert stored.hashed_token == hash_token(result.refresh_token)
+    assert stored.hashed_token != result.refresh_token
+    expiry = stored.expires_at
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=UTC)
+    assert expiry >= before + timedelta(seconds=REFRESH_TTL_SECONDS - 1)
     payload = jwt.decode(result.access_token, JWT_SECRET, algorithms=["HS256"])
     assert payload["sub"] == str(USER_ID)
     assert payload["role"] == "OPERATOR"
@@ -102,7 +138,7 @@ def test_login_user_returns_a_short_lived_access_token(jwt_settings: None) -> No
 def test_login_user_embeds_the_admin_role(jwt_settings: None) -> None:
     persistence = FakeUserPersistence(_user(role=UserRole.ADMIN))
 
-    result = login_user(_command(), persistence)
+    result = login_user(_command(), persistence, FakeRefreshTokenPersistence())
 
     payload = jwt.decode(result.access_token, JWT_SECRET, algorithms=["HS256"])
     assert payload["role"] == "ADMIN"
@@ -112,7 +148,7 @@ def test_login_user_replaces_a_stale_password_hash(jwt_settings: None) -> None:
     password_hash = PasswordHasher.from_parameters(CHEAPEST).hash(PASSWORD)
     persistence = FakeUserPersistence(_user(password_hash=password_hash))
 
-    login_user(_command(), persistence)
+    login_user(_command(), persistence, FakeRefreshTokenPersistence())
 
     assert len(persistence.updated) == 1
     assert persistence.updated[0][0] == USER_ID
@@ -134,7 +170,11 @@ def test_login_user_hides_unknown_emails_and_wrong_passwords(
     persistence = FakeUserPersistence(_user())
 
     with pytest.raises(InvalidCredentialsError, match="^Invalid email or password.$"):
-        login_user(_command(email=email, password=password), persistence)
+        login_user(
+            _command(email=email, password=password),
+            persistence,
+            FakeRefreshTokenPersistence(),
+        )
 
     assert persistence.updated == []
 
@@ -155,7 +195,11 @@ def test_login_user_wrong_password_does_not_reveal_account_status(
     persistence = FakeUserPersistence(_user(status=status))
 
     with pytest.raises(InvalidCredentialsError, match="^Invalid email or password.$"):
-        login_user(_command(password="Synthetic2"), persistence)
+        login_user(
+            _command(password="Synthetic2"),
+            persistence,
+            FakeRefreshTokenPersistence(),
+        )
 
     assert persistence.updated == []
 
@@ -174,7 +218,7 @@ def test_login_user_hides_an_unreadable_password_hash(
     persistence = FakeUserPersistence(_user(password_hash=password_hash))
 
     with pytest.raises(InvalidCredentialsError, match="^Invalid email or password.$"):
-        login_user(_command(), persistence)
+        login_user(_command(), persistence, FakeRefreshTokenPersistence())
 
     assert persistence.updated == []
 
@@ -196,7 +240,7 @@ def test_login_user_rejects_accounts_that_are_not_accepted(
     persistence = FakeUserPersistence(_user(status=status))
 
     with pytest.raises(AccountNotAcceptedError, match=f"^{message}$"):
-        login_user(_command(), persistence)
+        login_user(_command(), persistence, FakeRefreshTokenPersistence())
 
     assert persistence.updated == []
 
@@ -215,7 +259,7 @@ def test_login_user_treats_an_elapsed_pending_window_as_expired(
         AccountNotAcceptedError,
         match="^This registration expired. Register again.$",
     ):
-        login_user(_command(), persistence)
+        login_user(_command(), persistence, FakeRefreshTokenPersistence())
 
     assert persistence.updated == []
 
@@ -224,6 +268,10 @@ def test_login_user_rejects_an_invalid_email_before_lookup(jwt_settings: None) -
     persistence = FakeUserPersistence(_user())
 
     with pytest.raises(InvalidEmailAddressError):
-        login_user(_command(email="not-an-email"), persistence)
+        login_user(
+            _command(email="not-an-email"),
+            persistence,
+            FakeRefreshTokenPersistence(),
+        )
 
     assert persistence.updated == []

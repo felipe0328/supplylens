@@ -133,6 +133,7 @@ def get_app_environment() -> AppEnvironment:
 class JWTSettings:
     secret: str
     access_ttl_seconds: int
+    refresh_ttl_seconds: int
 
     def __post_init__(self) -> None:
         secret = _required_trimmed(self.secret, "JWT_SECRET")
@@ -148,6 +149,15 @@ class JWTSettings:
                 maximum=3600,
             ),
         )
+        object.__setattr__(
+            self,
+            "refresh_ttl_seconds",
+            _ttl_seconds(
+                self.refresh_ttl_seconds,
+                "JWT_REFRESH_TTL_SECONDS",
+                maximum=604800,
+            ),
+        )
 
 
 __jwt_settings: JWTSettings | None = None
@@ -159,5 +169,6 @@ def get_jwt_settings() -> JWTSettings:
         __jwt_settings = JWTSettings(
             secret=os.getenv("JWT_SECRET", ""),
             access_ttl_seconds=os.getenv("JWT_ACCESS_TTL_SECONDS", "900"),
+            refresh_ttl_seconds=os.getenv("JWT_REFRESH_TTL_SECONDS", "604800"),
         )
     return __jwt_settings

@@ -11,7 +11,11 @@ JWT_SECRET = "synthetic-jwt-secret-with-32-characters"
 
 @pytest.fixture
 def jwt_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = JWTSettings(secret=JWT_SECRET, access_ttl_seconds=900)
+    settings = JWTSettings(
+        secret=JWT_SECRET,
+        access_ttl_seconds=900,
+        refresh_ttl_seconds=604800,
+    )
     monkeypatch.setattr(
         "supplylens.tools.encode_decode.get_jwt_settings",
         lambda: settings,

@@ -47,5 +47,6 @@ class LoginRequest(BaseModel):
 
 class LoginResponse(BaseModel):
     access_token: str = Field(description="The JWT access token.")
+    refresh_token: str = Field(description="The opaque refresh token.")
     token_type: str = Field(description="The type of the token.")
     expires_in: int = Field(description="Access token lifetime in seconds.")

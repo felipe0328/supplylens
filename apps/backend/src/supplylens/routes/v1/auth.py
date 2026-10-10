@@ -13,6 +13,7 @@ from supplylens.controllers.users.exceptions import (
 from supplylens.controllers.users.login_user import LoginUserCommand, login_user
 from supplylens.controllers.users.register import RegisterUserCommand, register_user
 from supplylens.controllers.users.types import User as ControllerUser
+from supplylens.port.persistence.refresh_token import RefreshTokenPersistence
 from supplylens.port.persistence.users import UserPersistence
 from supplylens.schemas.users import (
     LoginRequest,
@@ -22,7 +23,7 @@ from supplylens.schemas.users import (
 )
 from supplylens.schemas.users import User as SchemaUser
 
-from .dependencies import get_user_persistence
+from .dependencies import get_refresh_token_persistence, get_user_persistence
 from .errors import error_responses
 
 auth_router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -88,18 +89,24 @@ def register(
 def login(
     request: LoginRequest,
     persistence: Annotated[UserPersistence, Depends(get_user_persistence)],
+    refresh_tokens: Annotated[
+        RefreshTokenPersistence, Depends(get_refresh_token_persistence)
+    ],
 ) -> LoginResponse:
-    """Returns a short-lived JWT access token when the email and password match
-    an accepted account. An unknown email and a wrong password return the same
-    401. Pending, rejected, expired, and deleted accounts return 403. A pending
-    account past its approval window is treated as expired.
+    """Returns a short-lived JWT access token and an opaque refresh token when
+    the email and password match an accepted account. An unknown email and a
+    wrong password return the same 401. Pending, rejected, expired, and deleted
+    accounts return 403. A pending account past its approval window is treated
+    as expired.
     """
     result = login_user(
         LoginUserCommand(email=request.email, password=request.password),
         persistence,
+        refresh_tokens,
     )
     return LoginResponse(
         access_token=result.access_token,
+        refresh_token=result.refresh_token,
         token_type=result.token_type,
         expires_in=result.expires_in,
     )
