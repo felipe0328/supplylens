@@ -62,17 +62,24 @@ def require_access_token(
 ) -> AccessPrincipal:
     try:
         decoded = decode_jwt(credentials.credentials)
+    except InvalidTokenError:
+        raise _unauthorized() from None
+    try:
         subject = decoded["sub"]
         role = decoded["role"]
         if not isinstance(subject, str) or not isinstance(role, str):
             raise ValueError
         return AccessPrincipal(user_id=UUID(subject), role=UserRole(role))
-    except InvalidTokenError, KeyError, ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from None
+    except KeyError, ValueError:
+        raise _unauthorized() from None
+
+
+def _unauthorized() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Unauthorized",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 def required_admin(

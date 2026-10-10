@@ -22,8 +22,7 @@ def jwt_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("supplylens.config.__jwt_settings", None)
 
 
-@pytest.fixture
-def client(jwt_environment: None) -> TestClient:
+def _app() -> FastAPI:
     app = FastAPI()
 
     @app.get("/session")
@@ -38,7 +37,12 @@ def client(jwt_environment: None) -> TestClient:
     ) -> dict[str, str]:
         return {"user_id": str(principal.user_id), "role": principal.role.value}
 
-    return TestClient(app)
+    return app
+
+
+@pytest.fixture
+def client(jwt_environment: None) -> TestClient:
+    return TestClient(_app())
 
 
 def _token(**overrides: object) -> str:
@@ -99,6 +103,32 @@ def test_require_access_token_rejects_an_expired_token(client: TestClient) -> No
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Unauthorized"}
+
+
+@pytest.mark.parametrize(
+    ("setting", "value"),
+    [
+        ("JWT_SECRET", ""),
+        ("JWT_SECRET", "too-short"),
+        ("JWT_ACCESS_TTL_SECONDS", "0"),
+        ("JWT_REFRESH_TTL_SECONDS", "nope"),
+    ],
+)
+def test_require_access_token_reports_invalid_jwt_configuration_as_a_server_error(
+    monkeypatch: pytest.MonkeyPatch,
+    setting: str,
+    value: str,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET", JWT_SECRET)
+    monkeypatch.setenv("JWT_ACCESS_TTL_SECONDS", "900")
+    monkeypatch.setenv("JWT_REFRESH_TTL_SECONDS", "604800")
+    monkeypatch.setenv(setting, value)
+    monkeypatch.setattr("supplylens.config.__jwt_settings", None)
+    failing_client = TestClient(_app(), raise_server_exceptions=False)
+
+    response = failing_client.get("/session", headers=_bearer(_token()))
+
+    assert response.status_code == 500
 
 
 def test_require_access_token_rejects_a_different_secret(client: TestClient) -> None:
