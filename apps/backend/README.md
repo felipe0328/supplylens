@@ -132,7 +132,8 @@ apps/backend/
 - Keep AI optional and non-authoritative.
 - Keep calculations deterministic and auditable.
 - Preserve document provenance.
-- Keep domain logic separate from provider-specific adapters.
+- Keep business rules deterministic and separate from provider-specific adapters.
+- Keep `supplylens/domain/` limited to type definitions. Do not put functions or tests there. Shared behavior belongs in `supplylens/helpers/` with a co-located test.
 - Validate against synthetic fixtures rather than live supplier data.
 
 ## Related documentation

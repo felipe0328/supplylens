@@ -13,7 +13,7 @@ from supplylens.tools.encode_decode import encode_jwt
 from supplylens.tools.encryption import hash_password, verify_password
 
 from .exceptions import AccountNotAcceptedError, InvalidCredentialsError
-from .helpers import validate_email_address
+from .validation import validate_email_address
 
 _INVALID_CREDENTIALS = "Invalid email or password."
 _DUMMY_PASSWORD_HASH: str | None = None

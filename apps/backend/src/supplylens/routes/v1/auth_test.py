@@ -24,10 +24,11 @@ from supplylens.controllers.users.login_user import LoginUserCommandResult
 from supplylens.controllers.users.register import RegisterUserCommandResult
 from supplylens.controllers.users.types import User as ControllerUser
 from supplylens.database import database
-from supplylens.database.database import Base, get_session
+from supplylens.database.database import Base
 from supplylens.domain.users import UserRole, UserStatus
 from supplylens.models.user import User as UserModel
-from supplylens.routes.v1 import users
+from supplylens.routes.v1 import auth
+from supplylens.routes.v1.dependencies import get_user_persistence
 from supplylens.tools.encode_decode import decode_jwt
 from supplylens.tools.encryption import verify_password
 
@@ -56,10 +57,9 @@ def _controller_user() -> ControllerUser:
 @pytest.fixture
 def register_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Mock]:
     app = create_app(AppEnvironment.TESTING)
-    app.dependency_overrides[get_session] = lambda: None
+    app.dependency_overrides[get_user_persistence] = lambda: Mock()
     controller = Mock(return_value=RegisterUserCommandResult(user=_controller_user()))
-    monkeypatch.setattr(users, "register_user", controller)
-    monkeypatch.setattr(users, "UserPersistenceAdapter", Mock())
+    monkeypatch.setattr(auth, "register_user", controller)
     return TestClient(app), controller
 
 
@@ -114,9 +114,29 @@ def test_register_includes_the_approver(
     response = client.post("/api/v1/auth/register", json=REGISTER_BODY)
 
     assert response.status_code == 201
-    assert response.json()["user"]["accepted_by"]["id"] == str(approver.id)
-    assert response.json()["user"]["accepted_by"]["email"] == "admin@example.com"
-    assert response.json()["user"]["accepted_by"]["accepted_by"] is None
+    user = response.json()["user"]
+    approver_body = user["accepted_by"]
+    assert approver_body["id"] == str(approver.id)
+    assert approver_body["email"] == "admin@example.com"
+    assert approver_body["accepted_by"] is None
+    assert "password_hash" not in user
+    assert "password_hash" not in approver_body
+
+
+def _assert_openapi_422_resolves_both_error_shapes(
+    schema: dict, operation: dict
+) -> None:
+    response_schema = operation["responses"]["422"]["content"]["application/json"][
+        "schema"
+    ]
+    references = {item["$ref"] for item in response_schema["oneOf"]}
+    components = schema["components"]["schemas"]
+    for reference in (
+        "#/components/schemas/ErrorResponse",
+        "#/components/schemas/HTTPValidationError",
+    ):
+        assert reference in references
+        assert reference.removeprefix("#/components/schemas/") in components
 
 
 def test_register_openapi_documents_pending_registration() -> None:
@@ -126,7 +146,7 @@ def test_register_openapi_documents_pending_registration() -> None:
     assert operation["summary"] == "Register a pending user"
     assert "does not" in operation["description"]
     assert "409" in operation["responses"]
-    assert "422" in operation["responses"]
+    _assert_openapi_422_resolves_both_error_shapes(schema, operation)
 
 
 @pytest.mark.parametrize(
@@ -163,11 +183,6 @@ def test_register_maps_invalid_password(
 
     assert response.status_code == 422
     assert response.json() == {"detail": "Password must be at least 8 characters long"}
-
-
-def test_register_http_error_rejects_unmapped_errors() -> None:
-    with pytest.raises(TypeError, match="No HTTP mapping for RuntimeError"):
-        users._register_http_error(RuntimeError("unexpected"))
 
 
 @pytest.fixture
@@ -350,7 +365,7 @@ JWT_SECRET = "synthetic-jwt-secret-with-32-characters"
 @pytest.fixture
 def login_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Mock]:
     app = create_app(AppEnvironment.TESTING)
-    app.dependency_overrides[get_session] = lambda: None
+    app.dependency_overrides[get_user_persistence] = lambda: Mock()
     controller = Mock(
         return_value=LoginUserCommandResult(
             access_token="synthetic-access-token",
@@ -358,8 +373,7 @@ def login_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Mock]:
             expires_in=900,
         )
     )
-    monkeypatch.setattr(users, "login_user", controller)
-    monkeypatch.setattr(users, "UserPersistenceAdapter", Mock())
+    monkeypatch.setattr(auth, "login_user", controller)
     return TestClient(app), controller
 
 
@@ -386,6 +400,7 @@ def test_login_returns_the_access_token(
     command = controller.call_args.args[0]
     assert command.email == "Operator@example.com"
     assert command.password == "Synthetic1"
+    assert "password_hash" not in response.json()
 
 
 def test_login_openapi_documents_credential_and_status_failures() -> None:
@@ -442,11 +457,6 @@ def test_login_maps_an_invalid_email(login_client: tuple[TestClient, Mock]) -> N
 
     assert response.status_code == 422
     assert response.json()["detail"].startswith("Invalid email address:")
-
-
-def test_login_http_error_rejects_unmapped_errors() -> None:
-    with pytest.raises(TypeError, match="No HTTP mapping for RuntimeError"):
-        users._login_http_error(RuntimeError("unexpected"))
 
 
 def test_login_api_returns_a_token_for_an_accepted_user(

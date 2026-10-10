@@ -3,15 +3,10 @@ from fastapi import APIRouter, HTTPException, status
 from supplylens.database.database import health_check
 from supplylens.schemas.common import ErrorResponse, HealthResponse
 
-from .documents import documents_router
-from .users import auth_router
-
-router = APIRouter()
-router.include_router(documents_router)
-router.include_router(auth_router)
+health_router = APIRouter(tags=["Health"])
 
 
-@router.get(
+@health_router.get(
     "/health/ready",
     response_model=HealthResponse,
     summary="Check database readiness",
@@ -27,9 +22,8 @@ router.include_router(auth_router)
             ),
         }
     },
-    tags=["Health"],
 )
-def health() -> dict[str, str]:
+def readiness() -> dict[str, str]:
     try:
         health_check()
     except ValueError as exc:

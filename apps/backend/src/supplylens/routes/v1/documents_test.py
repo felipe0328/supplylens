@@ -5,10 +5,15 @@ from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, func, select
+from sqlalchemy import Engine, create_engine, event, func, select
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm.session import SessionTransaction
 from sqlalchemy.pool import StaticPool
 
+from supplylens.adapters.persistence.documents import DocumentPersistenceAdapter
+from supplylens.adapters.persistence.processing_job import (
+    ProcessingJobPersistenceAdapter,
+)
 from supplylens.api import create_app
 from supplylens.config import AppEnvironment
 from supplylens.controllers.documents.create_upload_intent import (
@@ -25,12 +30,12 @@ from supplylens.controllers.documents.exceptions import (
 from supplylens.controllers.documents.get_document_url import (
     GetDocumentURLCommandResponse,
 )
-from supplylens.controllers.documents.types import Document as ControllerDocument
 from supplylens.database import database
-from supplylens.database.database import Base, get_session
+from supplylens.database.database import Base
 from supplylens.domain.documents import DocumentProcessingStatus, DocumentUploadStatus
 from supplylens.models.document import Document as ModelDocument
 from supplylens.models.processing_job import ProcessingJob as ModelProcessingJob
+from supplylens.port.persistence.documents import Document as StoredDocument
 from supplylens.port.storage.storage import (
     ObjectInfo,
     ObjectStorage,
@@ -38,6 +43,12 @@ from supplylens.port.storage.storage import (
     UploadTooLargeError,
 )
 from supplylens.routes.v1 import documents
+from supplylens.routes.v1.dependencies import (
+    get_document_persistence,
+    get_object_storage,
+    get_processing_job_persistence,
+)
+from supplylens.routes.v1.documents import to_document_schema
 
 DOCUMENT_ID = UUID("12345678-1234-5678-1234-567812345678")
 UPLOAD_REQUEST = {
@@ -50,9 +61,8 @@ UPLOAD_REQUEST = {
 @pytest.fixture
 def upload_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Mock]:
     app = create_app(AppEnvironment.TESTING)
-    app.dependency_overrides[get_session] = lambda: None
-    monkeypatch.setattr(documents, "DocumentPersistenceAdapter", Mock())
-    monkeypatch.setattr(documents, "StorageAdapter", Mock())
+    app.dependency_overrides[get_document_persistence] = lambda: Mock()
+    app.dependency_overrides[get_object_storage] = lambda: Mock()
     controller = Mock()
     monkeypatch.setattr(documents, "create_upload_intent_controller", controller)
     return TestClient(app), controller
@@ -174,17 +184,18 @@ def test_create_upload_intent_does_not_treat_configuration_errors_as_client_erro
     ],
 )
 def test_storage_configuration_errors_return_service_unavailable(
-    upload_client: tuple[TestClient, Mock],
     monkeypatch: pytest.MonkeyPatch,
     method: str,
     path: str,
 ) -> None:
-    client, _ = upload_client
+    app = create_app(AppEnvironment.TESTING)
+    app.dependency_overrides[get_document_persistence] = lambda: Mock()
+    app.dependency_overrides[get_processing_job_persistence] = lambda: Mock()
     monkeypatch.setattr(
-        documents,
-        "StorageAdapter",
+        "supplylens.routes.v1.dependencies.StorageAdapter",
         Mock(side_effect=ValueError("invalid storage configuration")),
     )
+    client = TestClient(app)
 
     response = client.request(
         method,
@@ -201,16 +212,15 @@ def document_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[TestClient, dict[str, Mock]]:
     app = create_app(AppEnvironment.TESTING)
-    app.dependency_overrides[get_session] = lambda: None
-    monkeypatch.setattr(documents, "DocumentPersistenceAdapter", Mock())
-    monkeypatch.setattr(documents, "StorageAdapter", Mock())
+    app.dependency_overrides[get_document_persistence] = lambda: Mock()
+    app.dependency_overrides[get_processing_job_persistence] = lambda: Mock()
+    app.dependency_overrides[get_object_storage] = lambda: Mock()
     controllers = {
         "complete": Mock(),
         "get": Mock(),
         "download_url": Mock(),
         "delete": Mock(),
     }
-    monkeypatch.setattr(documents, "ProcessingJobPersistenceAdapter", Mock())
     monkeypatch.setattr(
         documents, "report_upload_completed_controller", controllers["complete"]
     )
@@ -222,8 +232,8 @@ def document_client(
     return TestClient(app), controllers
 
 
-def _controller_document() -> ControllerDocument:
-    return ControllerDocument(
+def _stored_document() -> StoredDocument:
+    return StoredDocument(
         id=DOCUMENT_ID,
         filename="invoice.pdf",
         size_bytes=512,
@@ -241,7 +251,7 @@ def test_report_upload_completed_returns_mapped_document(
     document_client: tuple[TestClient, dict[str, Mock]],
 ) -> None:
     client, controllers = document_client
-    controllers["complete"].return_value = Mock(document=_controller_document())
+    controllers["complete"].return_value = Mock(document=_stored_document())
 
     response = client.post(f"/api/v1/documents/{DOCUMENT_ID}/complete")
 
@@ -263,25 +273,34 @@ def test_report_upload_completed_returns_mapped_document(
     controllers["complete"].assert_called_once()
 
 
-def test_report_upload_completed_passes_same_session_to_both_adapters(
-    document_client: tuple[TestClient, dict[str, Mock]],
-) -> None:
-    client, controllers = document_client
-    session = Mock(spec=Session)
-    client.app.dependency_overrides[get_session] = lambda: session
-    controllers["complete"].return_value = Mock(document=_controller_document())
+def test_document_openapi_lists_storage_failures_only_for_storage_operations() -> None:
+    paths = create_app(AppEnvironment.TESTING).openapi()["paths"]
 
-    response = client.post(f"/api/v1/documents/{DOCUMENT_ID}/complete")
+    assert "503" not in paths["/api/v1/documents/{id}"]["get"]["responses"]
+    for path, method in (
+        ("/api/v1/documents/uploads", "post"),
+        ("/api/v1/documents/{id}/complete", "post"),
+        ("/api/v1/documents/{id}/download-url", "post"),
+        ("/api/v1/documents/{id}", "delete"),
+    ):
+        assert "503" in paths[path][method]["responses"]
 
-    assert response.status_code == 200
-    documents.DocumentPersistenceAdapter.assert_called_once_with(session=session)
-    documents.ProcessingJobPersistenceAdapter.assert_called_once_with(session=session)
-    controllers["complete"].assert_called_once_with(
-        document_persistence=documents.DocumentPersistenceAdapter.return_value,
-        job_processing_persistence=documents.ProcessingJobPersistenceAdapter.return_value,
-        storage=documents.StorageAdapter.return_value,
-        id=DOCUMENT_ID,
-    )
+
+def test_to_document_schema_copies_public_fields() -> None:
+    stored = _stored_document()
+
+    assert to_document_schema(stored).model_dump() == {
+        "id": stored.id,
+        "filename": stored.filename,
+        "size_bytes": stored.size_bytes,
+        "document_type": stored.document_type,
+        "page_count": stored.page_count,
+        "upload_status": stored.upload_status,
+        "processing_status": stored.processing_status,
+        "created_at": stored.created_at,
+        "uploaded_at": stored.uploaded_at,
+        "processed_at": stored.processed_at,
+    }
 
 
 @pytest.mark.parametrize(
@@ -325,7 +344,7 @@ def test_get_document_data_returns_mapped_document(
     document_client: tuple[TestClient, dict[str, Mock]],
 ) -> None:
     client, controllers = document_client
-    controllers["get"].return_value = Mock(document=_controller_document())
+    controllers["get"].return_value = Mock(document=_stored_document())
 
     response = client.get(f"/api/v1/documents/{DOCUMENT_ID}")
 
@@ -421,11 +440,6 @@ def test_delete_document_maps_storage_unavailable(
     assert response.json() == {"detail": "Object storage is unavailable."}
 
 
-def test_document_http_error_rejects_unmapped_errors() -> None:
-    with pytest.raises(TypeError, match="No HTTP mapping for RuntimeError"):
-        documents._document_http_error(RuntimeError("unexpected"))
-
-
 @pytest.fixture
 def completion_transaction_client(
     monkeypatch: pytest.MonkeyPatch,
@@ -445,12 +459,13 @@ def completion_transaction_client(
                 ModelDocument(id=DOCUMENT_ID, filename="synthetic.pdf", size_bytes=512)
             )
         monkeypatch.setattr(database, "SessionLocal", factory)
+        app = create_app(AppEnvironment.TESTING)
         storage = Mock(spec=ObjectStorage)
         storage.head_object.return_value = ObjectInfo(
             f"documents/{DOCUMENT_ID}/original.pdf", 512, "application/pdf", None
         )
-        monkeypatch.setattr(documents, "_create_storage_adapter", lambda: storage)
-        with TestClient(create_app(AppEnvironment.TESTING)) as client:
+        app.dependency_overrides[get_object_storage] = lambda: storage
+        with TestClient(app) as client:
             yield client, engine
     finally:
         engine.dispose()
@@ -485,16 +500,16 @@ def test_completion_invalid_job_id_rolls_back_document_and_job(
     job_id: int,
 ) -> None:
     client, engine = completion_transaction_client
-    original_enqueue = documents.ProcessingJobPersistenceAdapter.enqueue_new_job
+    original_enqueue = ProcessingJobPersistenceAdapter.enqueue_new_job
 
     def enqueue_with_invalid_id(
-        adapter: documents.ProcessingJobPersistenceAdapter, document_uuid: UUID
+        adapter: ProcessingJobPersistenceAdapter, document_uuid: UUID
     ) -> int:
         original_enqueue(adapter, document_uuid)
         return job_id
 
     monkeypatch.setattr(
-        documents.ProcessingJobPersistenceAdapter,
+        ProcessingJobPersistenceAdapter,
         "enqueue_new_job",
         enqueue_with_invalid_id,
     )
@@ -511,21 +526,120 @@ def test_completion_invalid_job_id_rolls_back_document_and_job(
         assert session.scalar(select(func.count()).select_from(ModelProcessingJob)) == 0
 
 
+def _stored_object(size_bytes: int, content_type: str) -> ObjectInfo:
+    return ObjectInfo(
+        f"documents/{DOCUMENT_ID}/original.pdf",
+        size_bytes,
+        content_type,
+        None,
+    )
+
+
+def _completion_storage(
+    client: TestClient,
+    *,
+    size_bytes: int,
+    content_type: str,
+    delete_error: Exception | None = None,
+) -> Mock:
+    storage = Mock(spec=ObjectStorage)
+    storage.head_object.return_value = _stored_object(size_bytes, content_type)
+    if delete_error is not None:
+        storage.delete_object.side_effect = delete_error
+    client.app.dependency_overrides[get_object_storage] = lambda: storage
+    return storage
+
+
+def _assert_document_failed(engine: Engine) -> None:
+    with Session(engine) as session:
+        document = session.get(ModelDocument, DOCUMENT_ID)
+        assert document is not None
+        assert document.upload_status is DocumentUploadStatus.FAILED
+        assert document.uploaded_at is None
+        assert session.scalar(select(func.count()).select_from(ModelProcessingJob)) == 0
+
+
+@pytest.mark.parametrize(
+    ("size_bytes", "content_type", "expected_status", "expected_detail"),
+    [
+        (
+            511,
+            "application/pdf",
+            422,
+            "Uploaded document size does not match the declared size.",
+        ),
+        (
+            512,
+            "application/octet-stream",
+            415,
+            "Uploaded document must be a PDF.",
+        ),
+    ],
+)
+def test_completion_mismatch_persists_failed_status(
+    completion_transaction_client: tuple[TestClient, Engine],
+    size_bytes: int,
+    content_type: str,
+    expected_status: int,
+    expected_detail: str,
+) -> None:
+    client, engine = completion_transaction_client
+    storage = _completion_storage(
+        client, size_bytes=size_bytes, content_type=content_type
+    )
+
+    response = client.post(f"/api/v1/documents/{DOCUMENT_ID}/complete")
+
+    assert response.status_code == expected_status
+    assert response.json() == {"detail": expected_detail}
+    storage.delete_object.assert_called_once_with(
+        f"documents/{DOCUMENT_ID}/original.pdf"
+    )
+    _assert_document_failed(engine)
+
+
+@pytest.mark.parametrize(
+    ("size_bytes", "content_type"),
+    [
+        (511, "application/pdf"),
+        (512, "application/octet-stream"),
+    ],
+)
+def test_completion_mismatch_persists_failed_status_when_deletion_fails(
+    completion_transaction_client: tuple[TestClient, Engine],
+    size_bytes: int,
+    content_type: str,
+) -> None:
+    client, engine = completion_transaction_client
+    _completion_storage(
+        client,
+        size_bytes=size_bytes,
+        content_type=content_type,
+        delete_error=StorageUnavailableError("synthetic storage outage"),
+    )
+
+    response = client.post(f"/api/v1/documents/{DOCUMENT_ID}/complete")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Object storage is unavailable."}
+    _assert_document_failed(engine)
+
+
 def test_completion_enqueue_failure_rolls_back_document_and_job(
     completion_transaction_client: tuple[TestClient, Engine],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client, engine = completion_transaction_client
-    original_enqueue = documents.ProcessingJobPersistenceAdapter.enqueue_new_job
+    original_enqueue = ProcessingJobPersistenceAdapter.enqueue_new_job
 
     def fail_after_enqueue(
-        adapter: documents.ProcessingJobPersistenceAdapter, document_uuid: UUID
+        adapter: ProcessingJobPersistenceAdapter, document_uuid: UUID
     ) -> int:
         original_enqueue(adapter, document_uuid)
         raise RuntimeError("synthetic enqueue failure")
 
     monkeypatch.setattr(
-        documents.ProcessingJobPersistenceAdapter, "enqueue_new_job", fail_after_enqueue
+        ProcessingJobPersistenceAdapter, "enqueue_new_job", fail_after_enqueue
     )
 
     with pytest.raises(RuntimeError, match="synthetic enqueue failure"):
@@ -537,3 +651,118 @@ def test_completion_enqueue_failure_rolls_back_document_and_job(
         assert document.upload_status is DocumentUploadStatus.PENDING
         assert document.uploaded_at is None
         assert session.scalar(select(func.count()).select_from(ModelProcessingJob)) == 0
+
+
+def test_completion_passes_the_same_session_to_document_and_job_adapters(
+    completion_transaction_client: tuple[TestClient, Engine],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[Session] = []
+    original_document_init = DocumentPersistenceAdapter.__init__
+    original_job_init = ProcessingJobPersistenceAdapter.__init__
+
+    def document_init(self: DocumentPersistenceAdapter, session: Session) -> None:
+        seen.append(session)
+        original_document_init(self, session)
+
+    def job_init(self: ProcessingJobPersistenceAdapter, session: Session) -> None:
+        seen.append(session)
+        original_job_init(self, session)
+
+    monkeypatch.setattr(DocumentPersistenceAdapter, "__init__", document_init)
+    monkeypatch.setattr(ProcessingJobPersistenceAdapter, "__init__", job_init)
+    client, _engine = completion_transaction_client
+
+    response = client.post(f"/api/v1/documents/{DOCUMENT_ID}/complete")
+
+    assert response.status_code == 200
+    assert len(seen) == 2
+    assert seen[0] is seen[1]
+
+
+def _fail_session_commit(self: SessionTransaction, _to_root: bool = False) -> None:
+    raise RuntimeError("synthetic commit failure")
+
+
+def test_completion_commit_failure_is_not_a_successful_response(
+    completion_transaction_client: tuple[TestClient, Engine],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, engine = completion_transaction_client
+    failing_client = TestClient(client.app, raise_server_exceptions=False)
+    monkeypatch.setattr(SessionTransaction, "commit", _fail_session_commit)
+
+    response = failing_client.post(f"/api/v1/documents/{DOCUMENT_ID}/complete")
+
+    assert response.status_code not in {200, 415, 422}
+    with Session(engine) as session:
+        document = session.get(ModelDocument, DOCUMENT_ID)
+        assert document is not None
+        assert document.upload_status is DocumentUploadStatus.PENDING
+
+
+def test_completion_commit_failure_after_mismatch_is_not_a_mismatch_response(
+    completion_transaction_client: tuple[TestClient, Engine],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, engine = completion_transaction_client
+    _completion_storage(client, size_bytes=511, content_type="application/pdf")
+    failing_client = TestClient(client.app, raise_server_exceptions=False)
+    monkeypatch.setattr(SessionTransaction, "commit", _fail_session_commit)
+
+    response = failing_client.post(f"/api/v1/documents/{DOCUMENT_ID}/complete")
+
+    assert response.status_code not in {200, 415, 422}
+    with Session(engine) as session:
+        document = session.get(ModelDocument, DOCUMENT_ID)
+        assert document is not None
+        assert document.upload_status is DocumentUploadStatus.PENDING
+
+
+def test_storage_construction_failure_does_not_run_the_controller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    closed: list[Session] = []
+    rolled_back: list[Session] = []
+    original_close = Session.close
+
+    def close(self: Session) -> None:
+        closed.append(self)
+        original_close(self)
+
+    def record_rollback(session: Session) -> None:
+        rolled_back.append(session)
+
+    event.listen(Session, "after_rollback", record_rollback)
+    try:
+        Base.metadata.create_all(engine)
+        monkeypatch.setattr(
+            database,
+            "SessionLocal",
+            sessionmaker(bind=engine, autoflush=False),
+        )
+        monkeypatch.setattr(Session, "close", close)
+        monkeypatch.setattr(
+            "supplylens.routes.v1.dependencies.StorageAdapter",
+            Mock(side_effect=ValueError("invalid storage configuration")),
+        )
+        controller = Mock()
+        monkeypatch.setattr(documents, "report_upload_completed_controller", controller)
+        client = TestClient(create_app(AppEnvironment.TESTING))
+
+        response = client.post(f"/api/v1/documents/{DOCUMENT_ID}/complete")
+    finally:
+        event.remove(Session, "after_rollback", record_rollback)
+        engine.dispose()
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Object storage is unavailable."}
+    controller.assert_not_called()
+    assert rolled_back
+    assert closed
+    assert any(session in closed for session in rolled_back)

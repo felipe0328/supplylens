@@ -4,7 +4,7 @@ from supplylens.controllers.users.exceptions import (
     InvalidEmailAddressError,
     InvalidPasswordError,
 )
-from supplylens.controllers.users.helpers import (
+from supplylens.controllers.users.validation import (
     validate_email_address,
     validate_password,
 )

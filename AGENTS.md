@@ -44,7 +44,9 @@ The repository is still an early scaffold; the architecture document describes i
 - `infra/`: deployment and infrastructure configuration; currently a placeholder.
 - `compose.yaml`: local PostgreSQL with pgvector.
 
-Follow the modular backend layout proposed in the architecture document as features arrive. Keep API and worker entry points in the same `supplylens` package, and keep domain logic deterministic with provider-specific integrations behind adapters.
+Follow the modular backend layout proposed in the architecture document as features arrive. Keep API and worker entry points in the same `supplylens` package, and keep business rules deterministic with provider-specific integrations behind adapters.
+
+`supplylens/domain/` holds shared type definitions only: enums, exception classes, and other data shapes. Do not put functions there, and do not add tests there. Put behavior in the module that owns it, with a co-located `*_test.py`. A rule shared by a controller and an adapter, such as whether a pending account is still inside its approval window, belongs in `supplylens/helpers/`, which both layers can import.
 
 ## Build, Test, and Development Commands
 

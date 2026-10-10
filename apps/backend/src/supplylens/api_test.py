@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from supplylens.api import app, create_app
 from supplylens.config import AppEnvironment
-from supplylens.routes.v1 import routes
+from supplylens.routes.v1 import health
 
 client = TestClient(app)
 
@@ -47,7 +47,7 @@ def test_app_version_matches_package_version() -> None:
 
 
 def test_create_app_registers_health_routes(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(routes, "health_check", lambda: True)
+    monkeypatch.setattr(health, "health_check", lambda: True)
     configured_client = TestClient(create_app(AppEnvironment.TESTING))
 
     assert configured_client.get("/health").json() == {"status": "ok"}
@@ -68,7 +68,7 @@ def test_liveness_succeeds_without_database_configuration(
 def test_readiness_succeeds_when_database_is_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(routes, "health_check", lambda: True)
+    monkeypatch.setattr(health, "health_check", lambda: True)
 
     response = client.get("/api/v1/health/ready")
 
@@ -93,7 +93,7 @@ def test_readiness_returns_503_when_database_is_unavailable(
     def fail_health_check() -> None:
         raise RuntimeError("connection refused with private details")
 
-    monkeypatch.setattr(routes, "health_check", fail_health_check)
+    monkeypatch.setattr(health, "health_check", fail_health_check)
 
     response = client.get("/api/v1/health/ready")
 

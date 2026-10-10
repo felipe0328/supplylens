@@ -3,7 +3,8 @@ from importlib.metadata import version
 from fastapi import FastAPI
 
 from supplylens.config import AppEnvironment, get_app_environment
-from supplylens.routes.v1.routes import router as v1_router
+from supplylens.routes.v1.errors import register_http_exception_handlers
+from supplylens.routes.v1.router import router as v1_router
 from supplylens.schemas.common import HealthResponse
 
 
@@ -43,6 +44,7 @@ def create_app(environment: AppEnvironment | None = None) -> FastAPI:
         ],
         debug=app_environment is AppEnvironment.DEVELOPMENT,
     )
+    register_http_exception_handlers(app)
     app.include_router(v1_router, prefix="/api/v1")
     app.add_api_route(
         "/health",
