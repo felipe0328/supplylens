@@ -21,6 +21,7 @@ RAW_TOKEN = "synthetic-refresh-token"
 class FakeRefreshTokenPersistence:
     def __init__(self, tokens: list[RefreshToken] | None = None) -> None:
         self.by_id = {token.id: token for token in tokens or []}
+        self.commits = 0
 
     def get_refresh_token(self, hashed_token: str) -> RefreshToken | None:
         return next(
@@ -45,6 +46,9 @@ class FakeRefreshTokenPersistence:
         )
         self.by_id[id] = updated
         return updated
+
+    def commit(self) -> None:
+        self.commits += 1
 
 
 def _token(
@@ -73,6 +77,7 @@ def test_logout_user_revokes_the_current_token() -> None:
     stored = tokens.by_id[current.id]
     assert stored.revoked_at is not None
     assert stored.replaced_by is None
+    assert tokens.commits == 0
     assert tokens.get_refresh_token(hash_token(RAW_TOKEN)) is stored
 
 
@@ -92,5 +97,6 @@ def test_logout_user_revokes_the_newer_token_when_the_old_one_is_reused() -> Non
     with pytest.raises(InvalidOrExpiredRefreshTokenError, match=INVALID_REFRESH_TOKEN):
         logout_user(LogoutUserRequest(refresh_token=RAW_TOKEN), tokens)
 
+    assert tokens.commits == 1
     assert tokens.by_id[2].revoked_at is not None
     assert tokens.by_id[2].replaced_by is None

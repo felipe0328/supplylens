@@ -137,6 +137,22 @@ def test_update_refresh_token_sets_revoked_at_and_replaced_by(
     assert updated.revoked_at is not None
 
 
+def test_commit_keeps_a_revocation(session: Session) -> None:
+    adapter = RefreshTokenPersistenceAdapter(session)
+    token_id = _store(adapter, "synthetic-hash-commit", FUTURE)
+    adapter.update_refresh_token(
+        token_id,
+        UpdateRefreshTokenRequest(revoked_at=REVOKED_AT, replaced_by=None),
+    )
+
+    adapter.commit()
+    session.expire_all()
+
+    loaded = adapter.get_refresh_token_by_id(token_id)
+    assert loaded is not None
+    assert loaded.revoked_at is not None
+
+
 def test_update_refresh_token_missing_id_raises(session: Session) -> None:
     with pytest.raises(ValueError, match="not found"):
         RefreshTokenPersistenceAdapter(session).update_refresh_token(

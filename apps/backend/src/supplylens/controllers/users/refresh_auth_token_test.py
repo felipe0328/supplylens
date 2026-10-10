@@ -44,6 +44,7 @@ class FakeRefreshTokenPersistence:
     def __init__(self, tokens: list[RefreshToken] | None = None) -> None:
         self.by_id = {token.id: token for token in tokens or []}
         self.stored: list[StoreRefreshTokenRequest] = []
+        self.commits = 0
         self._next_id = max(self.by_id, default=0) + 1
 
     def get_refresh_token(self, hashed_token: str) -> RefreshToken | None:
@@ -83,6 +84,9 @@ class FakeRefreshTokenPersistence:
         )
         self.by_id[id] = updated
         return updated
+
+    def commit(self) -> None:
+        self.commits += 1
 
 
 def _user(**overrides: object) -> PortUser:
@@ -161,6 +165,7 @@ def test_refresh_auth_token_issues_a_new_pair(jwt_settings: None) -> None:
     revoked = tokens.by_id[current.id]
     assert revoked.revoked_at is not None
     assert revoked.replaced_by == current.id + 1
+    assert tokens.commits == 0
 
 
 def test_refresh_auth_token_rejects_an_unknown_token(jwt_settings: None) -> None:
@@ -174,6 +179,7 @@ def test_refresh_auth_token_rejects_an_unknown_token(jwt_settings: None) -> None
         )
 
     assert tokens.stored == []
+    assert tokens.commits == 0
 
 
 def test_refresh_auth_token_revokes_the_newer_token_when_the_old_one_is_reused(
@@ -192,6 +198,7 @@ def test_refresh_auth_token_revokes_the_newer_token_when_the_old_one_is_reused(
         )
 
     assert tokens.stored == []
+    assert tokens.commits == 1
     assert tokens.by_id[2].revoked_at is not None
     assert tokens.by_id[2].replaced_by is None
 
@@ -218,4 +225,5 @@ def test_refresh_auth_token_revokes_when_the_account_cannot_continue(
         )
 
     assert tokens.stored == []
+    assert tokens.commits == 1
     assert tokens.by_id[current.id].revoked_at is not None

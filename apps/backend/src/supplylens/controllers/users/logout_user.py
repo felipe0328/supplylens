@@ -24,4 +24,6 @@ def logout_user(
 
     revoke_refresh_token_family(existing_token, refresh_token_persistence)
     if existing_token.revoked_at is not None:
+        # Keep the revocation when this request ends as an auth error.
+        refresh_token_persistence.commit()
         raise InvalidOrExpiredRefreshTokenError(INVALID_REFRESH_TOKEN)

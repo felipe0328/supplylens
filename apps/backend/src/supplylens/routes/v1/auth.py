@@ -6,11 +6,18 @@ from supplylens.controllers.users.exceptions import (
     AccountNotAcceptedError,
     InvalidCredentialsError,
     InvalidEmailAddressError,
+    InvalidOrExpiredRefreshTokenError,
     InvalidPasswordError,
     UserAlreadyExistsError,
     UserPendingError,
 )
 from supplylens.controllers.users.login_user import LoginUserCommand, login_user
+from supplylens.controllers.users.logout_user import LogoutUserRequest, logout_user
+from supplylens.controllers.users.refresh_auth_token import (
+    RefreshAuthTokenRequest,
+    RefreshAuthTokenResponse,
+    refresh_auth_token,
+)
 from supplylens.controllers.users.register import RegisterUserCommand, register_user
 from supplylens.controllers.users.types import User as ControllerUser
 from supplylens.port.persistence.refresh_token import RefreshTokenPersistence
@@ -18,6 +25,9 @@ from supplylens.port.persistence.users import UserPersistence
 from supplylens.schemas.users import (
     LoginRequest,
     LoginResponse,
+    LogoutRequest,
+    RefreshRequest,
+    RefreshResponse,
     RegisterRequest,
     RegisterResponse,
 )
@@ -88,7 +98,7 @@ def register(
 )
 def login(
     request: LoginRequest,
-    persistence: Annotated[UserPersistence, Depends(get_user_persistence)],
+    user_persistence: Annotated[UserPersistence, Depends(get_user_persistence)],
     refresh_tokens: Annotated[
         RefreshTokenPersistence, Depends(get_refresh_token_persistence)
     ],
@@ -101,7 +111,7 @@ def login(
     """
     result = login_user(
         LoginUserCommand(email=request.email, password=request.password),
-        persistence,
+        user_persistence,
         refresh_tokens,
     )
     return LoginResponse(
@@ -109,4 +119,48 @@ def login(
         refresh_token=result.refresh_token,
         token_type=result.token_type,
         expires_in=result.expires_in,
+    )
+
+
+@auth_router.post(
+    "/refresh",
+    status_code=status.HTTP_200_OK,
+    summary="Refresh an access token",
+    responses=error_responses(InvalidOrExpiredRefreshTokenError, validation=True),
+)
+def refresh(
+    request: RefreshRequest,
+    user_persistence: Annotated[UserPersistence, Depends(get_user_persistence)],
+    refresh_token_persistence: Annotated[
+        RefreshTokenPersistence, Depends(get_refresh_token_persistence)
+    ],
+) -> RefreshResponse:
+    result: RefreshAuthTokenResponse = refresh_auth_token(
+        RefreshAuthTokenRequest(refresh_token=request.refresh_token),
+        refresh_token_persistence,
+        user_persistence,
+    )
+    return RefreshResponse(
+        access_token=result.access_token,
+        refresh_token=result.refresh_token,
+        token_type=result.token_type,
+        expires_in=result.expires_in,
+    )
+
+
+@auth_router.post(
+    "/logout",
+    status_code=status.HTTP_200_OK,
+    summary="Log out a user",
+    responses=error_responses(InvalidOrExpiredRefreshTokenError, validation=True),
+)
+def logout(
+    request: LogoutRequest,
+    refresh_token_persistence: Annotated[
+        RefreshTokenPersistence, Depends(get_refresh_token_persistence)
+    ],
+) -> None:
+    logout_user(
+        LogoutUserRequest(refresh_token=request.refresh_token),
+        refresh_token_persistence,
     )

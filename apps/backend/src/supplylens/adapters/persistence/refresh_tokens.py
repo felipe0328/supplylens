@@ -72,3 +72,6 @@ class RefreshTokenPersistenceAdapter(RefreshTokenPersistence):
             raise ValueError(f"Refresh token with id {id} not found")
 
         self._session.delete(refresh_token)
+
+    def commit(self) -> None:
+        self._session.commit()

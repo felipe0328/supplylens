@@ -29,6 +29,12 @@ class RefreshAuthTokenResponse:
     expires_in: int
 
 
+def _keep_revocation(persistence: RefreshTokenPersistence) -> None:
+    """Commit so the request transaction cannot roll the revocation back."""
+    persistence.commit()
+    raise InvalidOrExpiredRefreshTokenError(INVALID_REFRESH_TOKEN)
+
+
 def refresh_auth_token(
     req: RefreshAuthTokenRequest,
     refresh_token_persistence: RefreshTokenPersistence,
@@ -42,12 +48,12 @@ def refresh_auth_token(
 
     if existing_token.revoked_at is not None:
         revoke_refresh_token_family(existing_token, refresh_token_persistence)
-        raise InvalidOrExpiredRefreshTokenError(INVALID_REFRESH_TOKEN)
+        _keep_revocation(refresh_token_persistence)
 
     user = user_persistence.get_user_by_id(existing_token.user_id)
     if user is None or user.status is not UserStatus.ACCEPTED:
         revoke_refresh_token_family(existing_token, refresh_token_persistence)
-        raise InvalidOrExpiredRefreshTokenError(INVALID_REFRESH_TOKEN)
+        _keep_revocation(refresh_token_persistence)
 
     settings = get_jwt_settings()
     new_token, new_token_id = create_refresh_token(

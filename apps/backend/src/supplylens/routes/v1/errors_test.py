@@ -8,7 +8,9 @@ from supplylens.controllers.documents.exceptions import (
     DocumentNotFoundError,
     StoreDocumentInvalidSizeError,
 )
+from supplylens.controllers.users.constants import INVALID_REFRESH_TOKEN
 from supplylens.controllers.users.exceptions import (
+    InvalidOrExpiredRefreshTokenError,
     InvalidPasswordError,
     UserAlreadyExistsError,
     UserPendingError,
@@ -45,6 +47,15 @@ def test_http_error_response_uses_auth_exception_message() -> None:
 
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
     assert json.loads(response.body) == {"detail": message}
+
+
+def test_http_error_response_uses_the_refresh_token_message() -> None:
+    response = http_error_response(
+        InvalidOrExpiredRefreshTokenError(INVALID_REFRESH_TOKEN)
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert json.loads(response.body) == {"detail": INVALID_REFRESH_TOKEN}
 
 
 def test_error_responses_merges_shared_statuses_and_validation_schemas() -> None:

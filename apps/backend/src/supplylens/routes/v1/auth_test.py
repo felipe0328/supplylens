@@ -12,15 +12,18 @@ from sqlalchemy.pool import StaticPool
 
 from supplylens.api import create_app
 from supplylens.config import AppEnvironment
+from supplylens.controllers.users.constants import INVALID_REFRESH_TOKEN
 from supplylens.controllers.users.exceptions import (
     AccountNotAcceptedError,
     InvalidCredentialsError,
     InvalidEmailAddressError,
+    InvalidOrExpiredRefreshTokenError,
     InvalidPasswordError,
     UserAlreadyExistsError,
     UserPendingError,
 )
 from supplylens.controllers.users.login_user import LoginUserCommandResult
+from supplylens.controllers.users.refresh_auth_token import RefreshAuthTokenResponse
 from supplylens.controllers.users.register import RegisterUserCommandResult
 from supplylens.controllers.users.types import User as ControllerUser
 from supplylens.database import database
@@ -388,6 +391,7 @@ def login_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Mock]:
 def jwt_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("JWT_SECRET", JWT_SECRET)
     monkeypatch.setenv("JWT_ACCESS_TTL_SECONDS", "900")
+    monkeypatch.setenv("JWT_REFRESH_TTL_SECONDS", "604800")
     monkeypatch.setattr("supplylens.config.__jwt_settings", None)
 
 
@@ -589,3 +593,340 @@ def test_login_api_rejects_accounts_that_are_not_accepted(
 
     assert response.status_code == 403
     assert response.json() == {"detail": message}
+
+
+REFRESH_BODY = {"refresh_token": "synthetic-refresh-token"}
+
+
+@pytest.fixture
+def refresh_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Mock]:
+    app = create_app(AppEnvironment.TESTING)
+    app.dependency_overrides[get_user_persistence] = lambda: Mock()
+    app.dependency_overrides[get_refresh_token_persistence] = lambda: Mock()
+    controller = Mock(
+        return_value=RefreshAuthTokenResponse(
+            access_token="synthetic-access-token",
+            refresh_token="synthetic-refresh-token-next",
+            token_type="Bearer",
+            expires_in=900,
+        )
+    )
+    monkeypatch.setattr(auth, "refresh_auth_token", controller)
+    return TestClient(app), controller
+
+
+@pytest.fixture
+def logout_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Mock]:
+    app = create_app(AppEnvironment.TESTING)
+    app.dependency_overrides[get_refresh_token_persistence] = lambda: Mock()
+    controller = Mock(return_value=None)
+    monkeypatch.setattr(auth, "logout_user", controller)
+    return TestClient(app), controller
+
+
+def _login_accepted_user(
+    client: TestClient, factory: sessionmaker[Session]
+) -> tuple[str, dict[str, str | int]]:
+    created = client.post("/api/v1/auth/register", json=REGISTER_BODY)
+    user_id = created.json()["user"]["id"]
+    with factory() as session:
+        stored = session.scalar(select(UserModel))
+        assert stored is not None
+        stored.status = UserStatus.ACCEPTED
+        session.commit()
+
+    response = client.post("/api/v1/auth/login", json=REGISTER_BODY)
+    assert response.status_code == 200
+    return user_id, response.json()
+
+
+def test_refresh_returns_a_new_token_pair(
+    refresh_client: tuple[TestClient, Mock],
+) -> None:
+    client, controller = refresh_client
+
+    response = client.post("/api/v1/auth/refresh", json=REFRESH_BODY)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "access_token": "synthetic-access-token",
+        "refresh_token": "synthetic-refresh-token-next",
+        "token_type": "Bearer",
+        "expires_in": 900,
+    }
+    request, token_persistence, user_persistence = controller.call_args.args
+    assert request.refresh_token == "synthetic-refresh-token"
+    assert token_persistence is not user_persistence
+
+
+def test_refresh_openapi_documents_invalid_tokens() -> None:
+    schema = create_app(AppEnvironment.TESTING).openapi()
+    operation = schema["paths"]["/api/v1/auth/refresh"]["post"]
+
+    assert operation["summary"] == "Refresh an access token"
+    assert "invalid or expired" in operation["responses"]["401"]["description"]
+    assert "422" in operation["responses"]
+
+
+def test_refresh_maps_an_invalid_token(
+    refresh_client: tuple[TestClient, Mock],
+) -> None:
+    client, controller = refresh_client
+    controller.side_effect = InvalidOrExpiredRefreshTokenError(INVALID_REFRESH_TOKEN)
+
+    response = client.post("/api/v1/auth/refresh", json=REFRESH_BODY)
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": INVALID_REFRESH_TOKEN}
+
+
+def test_refresh_rejects_a_body_without_a_token(
+    refresh_client: tuple[TestClient, Mock],
+) -> None:
+    client, controller = refresh_client
+
+    response = client.post("/api/v1/auth/refresh", json={})
+
+    assert response.status_code == 422
+    controller.assert_not_called()
+
+
+def test_refresh_api_rotates_the_session(
+    registration_client: tuple[TestClient, sessionmaker[Session]],
+    jwt_environment: None,
+) -> None:
+    client, factory = registration_client
+    user_id, login_body = _login_accepted_user(client, factory)
+    original = str(login_body["refresh_token"])
+
+    response = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": original},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["token_type"] == "Bearer"
+    assert body["expires_in"] == 900
+    assert body["refresh_token"] != original
+    decoded = decode_jwt(body["access_token"])
+    assert decoded["sub"] == user_id
+    assert decoded["role"] == "OPERATOR"
+    with factory() as session:
+        rows = session.scalars(
+            select(RefreshTokenModel).order_by(RefreshTokenModel.id)
+        ).all()
+        assert len(rows) == 2
+        assert rows[0].hashed_token == hash_token(original)
+        assert rows[0].revoked_at is not None
+        assert rows[0].replaced_by == rows[1].id
+        assert rows[1].hashed_token == hash_token(body["refresh_token"])
+        assert rows[1].revoked_at is None
+        assert rows[1].hashed_token != body["refresh_token"]
+
+
+def test_refresh_api_rejects_an_unknown_token(
+    registration_client: tuple[TestClient, sessionmaker[Session]],
+    jwt_environment: None,
+) -> None:
+    client, factory = registration_client
+
+    response = client.post("/api/v1/auth/refresh", json=REFRESH_BODY)
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": INVALID_REFRESH_TOKEN}
+    with factory() as session:
+        assert session.scalar(select(RefreshTokenModel)) is None
+
+
+def test_refresh_api_rejects_an_expired_token(
+    registration_client: tuple[TestClient, sessionmaker[Session]],
+    jwt_environment: None,
+) -> None:
+    client, factory = registration_client
+    _user_id, login_body = _login_accepted_user(client, factory)
+    with factory() as session:
+        stored = session.scalar(select(RefreshTokenModel))
+        assert stored is not None
+        stored.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        session.commit()
+
+    response = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": login_body["refresh_token"]},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": INVALID_REFRESH_TOKEN}
+    with factory() as session:
+        rows = session.scalars(select(RefreshTokenModel)).all()
+        assert len(rows) == 1
+        assert rows[0].revoked_at is None
+
+
+def test_refresh_api_revokes_the_newer_token_when_the_old_one_is_reused(
+    registration_client: tuple[TestClient, sessionmaker[Session]],
+    jwt_environment: None,
+) -> None:
+    client, factory = registration_client
+    _user_id, login_body = _login_accepted_user(client, factory)
+    original = str(login_body["refresh_token"])
+    rotated = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": original},
+    )
+    assert rotated.status_code == 200
+
+    response = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": original},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": INVALID_REFRESH_TOKEN}
+    with factory() as session:
+        rows = session.scalars(
+            select(RefreshTokenModel).order_by(RefreshTokenModel.id)
+        ).all()
+        assert len(rows) == 2
+        assert rows[0].revoked_at is not None
+        assert rows[0].replaced_by == rows[1].id
+        assert rows[1].revoked_at is not None
+        assert rows[1].replaced_by is None
+
+
+def test_refresh_api_revokes_when_the_account_cannot_continue(
+    registration_client: tuple[TestClient, sessionmaker[Session]],
+    jwt_environment: None,
+) -> None:
+    client, factory = registration_client
+    _user_id, login_body = _login_accepted_user(client, factory)
+    with factory() as session:
+        stored = session.scalar(select(UserModel))
+        assert stored is not None
+        stored.status = UserStatus.DELETED
+        session.commit()
+
+    response = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": login_body["refresh_token"]},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": INVALID_REFRESH_TOKEN}
+    with factory() as session:
+        rows = session.scalars(select(RefreshTokenModel)).all()
+        assert len(rows) == 1
+        assert rows[0].revoked_at is not None
+        assert rows[0].replaced_by is None
+
+
+def test_logout_revokes_through_the_controller(
+    logout_client: tuple[TestClient, Mock],
+) -> None:
+    client, controller = logout_client
+
+    response = client.post("/api/v1/auth/logout", json=REFRESH_BODY)
+
+    assert response.status_code == 200
+    assert response.json() is None
+    request, token_persistence = controller.call_args.args
+    assert request.refresh_token == "synthetic-refresh-token"
+    assert token_persistence is not None
+
+
+def test_logout_openapi_documents_invalid_tokens() -> None:
+    schema = create_app(AppEnvironment.TESTING).openapi()
+    operation = schema["paths"]["/api/v1/auth/logout"]["post"]
+
+    assert operation["summary"] == "Log out a user"
+    assert "invalid or expired" in operation["responses"]["401"]["description"]
+    assert "422" in operation["responses"]
+
+
+def test_logout_maps_an_invalid_token(logout_client: tuple[TestClient, Mock]) -> None:
+    client, controller = logout_client
+    controller.side_effect = InvalidOrExpiredRefreshTokenError(INVALID_REFRESH_TOKEN)
+
+    response = client.post("/api/v1/auth/logout", json=REFRESH_BODY)
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": INVALID_REFRESH_TOKEN}
+
+
+def test_logout_rejects_a_body_without_a_token(
+    logout_client: tuple[TestClient, Mock],
+) -> None:
+    client, controller = logout_client
+
+    response = client.post("/api/v1/auth/logout", json={})
+
+    assert response.status_code == 422
+    controller.assert_not_called()
+
+
+def test_logout_api_revokes_the_session_and_keeps_the_row(
+    registration_client: tuple[TestClient, sessionmaker[Session]],
+    jwt_environment: None,
+) -> None:
+    client, factory = registration_client
+    _user_id, login_body = _login_accepted_user(client, factory)
+    raw_token = str(login_body["refresh_token"])
+
+    response = client.post("/api/v1/auth/logout", json={"refresh_token": raw_token})
+
+    assert response.status_code == 200
+    assert response.json() is None
+    with factory() as session:
+        stored = session.scalar(select(RefreshTokenModel))
+        assert stored is not None
+        assert stored.hashed_token == hash_token(raw_token)
+        assert stored.revoked_at is not None
+        assert stored.replaced_by is None
+
+    reused = client.post("/api/v1/auth/refresh", json={"refresh_token": raw_token})
+    assert reused.status_code == 401
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(RefreshTokenModel)) == 1
+
+
+def test_logout_api_rejects_an_unknown_token(
+    registration_client: tuple[TestClient, sessionmaker[Session]],
+    jwt_environment: None,
+) -> None:
+    client, _factory = registration_client
+
+    response = client.post("/api/v1/auth/logout", json=REFRESH_BODY)
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": INVALID_REFRESH_TOKEN}
+
+
+def test_logout_api_revokes_the_newer_token_when_the_old_one_is_reused(
+    registration_client: tuple[TestClient, sessionmaker[Session]],
+    jwt_environment: None,
+) -> None:
+    client, factory = registration_client
+    _user_id, login_body = _login_accepted_user(client, factory)
+    original = str(login_body["refresh_token"])
+    rotated = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": original},
+    )
+    assert rotated.status_code == 200
+    current = str(rotated.json()["refresh_token"])
+
+    response = client.post("/api/v1/auth/logout", json={"refresh_token": original})
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": INVALID_REFRESH_TOKEN}
+    with factory() as session:
+        rows = session.scalars(
+            select(RefreshTokenModel).order_by(RefreshTokenModel.id)
+        ).all()
+        assert len(rows) == 2
+        assert rows[0].hashed_token == hash_token(original)
+        assert rows[1].hashed_token == hash_token(current)
+        assert rows[0].revoked_at is not None
+        assert rows[1].revoked_at is not None
+        assert rows[1].replaced_by is None

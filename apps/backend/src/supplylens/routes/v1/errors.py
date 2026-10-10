@@ -10,10 +10,12 @@ from supplylens.controllers.documents.exceptions import (
     InvalidJobProcessingID,
     StoreDocumentInvalidSizeError,
 )
+from supplylens.controllers.users.constants import INVALID_REFRESH_TOKEN
 from supplylens.controllers.users.exceptions import (
     AccountNotAcceptedError,
     InvalidCredentialsError,
     InvalidEmailAddressError,
+    InvalidOrExpiredRefreshTokenError,
     InvalidPasswordError,
     UserAlreadyExistsError,
     UserPendingError,
@@ -98,6 +100,12 @@ HTTP_ERRORS: dict[type[Exception], HttpErrorSpec] = {
         status_code=status.HTTP_401_UNAUTHORIZED,
         description="The email or password is incorrect.",
         detail="Invalid email or password.",
+        use_exception_message=True,
+    ),
+    InvalidOrExpiredRefreshTokenError: HttpErrorSpec(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        description="The refresh token is invalid or expired.",
+        detail=INVALID_REFRESH_TOKEN,
         use_exception_message=True,
     ),
     AccountNotAcceptedError: HttpErrorSpec(
