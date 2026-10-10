@@ -100,14 +100,23 @@ def test_get_refresh_token_returns_a_revoked_unexpired_token(session: Session) -
     assert loaded.revoked_at is not None
 
 
-def test_get_refresh_token_returns_none_when_expired_or_unknown(
-    session: Session,
-) -> None:
+def test_get_refresh_token_returns_an_expired_token(session: Session) -> None:
     adapter = RefreshTokenPersistenceAdapter(session)
-    _store(adapter, "synthetic-hash-expired", PAST)
+    token_id = _store(adapter, "synthetic-hash-expired", PAST)
 
-    assert adapter.get_refresh_token("synthetic-hash-expired") is None
-    assert adapter.get_refresh_token("synthetic-hash-missing") is None
+    loaded = adapter.get_refresh_token("synthetic-hash-expired")
+
+    assert loaded is not None
+    assert loaded.id == token_id
+
+
+def test_get_refresh_token_returns_none_when_unknown(session: Session) -> None:
+    assert (
+        RefreshTokenPersistenceAdapter(session).get_refresh_token(
+            "synthetic-hash-missing"
+        )
+        is None
+    )
 
 
 def test_get_refresh_token_by_id_returns_an_expired_token(session: Session) -> None:
@@ -150,6 +159,28 @@ def test_commit_keeps_a_revocation(session: Session) -> None:
 
     loaded = adapter.get_refresh_token_by_id(token_id)
     assert loaded is not None
+    assert loaded.revoked_at is not None
+
+
+def test_update_refresh_token_keeps_the_recorded_successor(session: Session) -> None:
+    adapter = RefreshTokenPersistenceAdapter(session)
+    current_id = _store(adapter, "synthetic-hash-current", FUTURE)
+    previous_id = _store(adapter, "synthetic-hash-previous", FUTURE)
+    other_id = _store(adapter, "synthetic-hash-other", FUTURE)
+    adapter.update_refresh_token(
+        previous_id,
+        UpdateRefreshTokenRequest(revoked_at=REVOKED_AT, replaced_by=current_id),
+    )
+
+    second_write = adapter.update_refresh_token(
+        previous_id,
+        UpdateRefreshTokenRequest(revoked_at=REVOKED_AT, replaced_by=other_id),
+    )
+
+    assert second_write is None
+    loaded = adapter.get_refresh_token_by_id(previous_id)
+    assert loaded is not None
+    assert loaded.replaced_by == current_id
     assert loaded.revoked_at is not None
 
 

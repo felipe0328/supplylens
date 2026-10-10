@@ -12,7 +12,7 @@ from supplylens.tools.token_hash import hash_token
 
 from .constants import INVALID_REFRESH_TOKEN, TOKEN_TYPE
 from .exceptions import InvalidOrExpiredRefreshTokenError
-from .refresh_token_chain import revoke_refresh_token_family
+from .refresh_token_chain import refresh_token_is_expired, revoke_refresh_token_family
 from .session_tokens import create_access_token, create_refresh_token
 
 
@@ -50,6 +50,9 @@ def refresh_auth_token(
         revoke_refresh_token_family(existing_token, refresh_token_persistence)
         _keep_revocation(refresh_token_persistence)
 
+    if refresh_token_is_expired(existing_token):
+        raise InvalidOrExpiredRefreshTokenError(INVALID_REFRESH_TOKEN)
+
     user = user_persistence.get_user_by_id(existing_token.user_id)
     if user is None or user.status is not UserStatus.ACCEPTED:
         revoke_refresh_token_family(existing_token, refresh_token_persistence)
@@ -61,13 +64,15 @@ def refresh_auth_token(
         refresh_token_persistence,
         settings.refresh_ttl_seconds,
     )
-    refresh_token_persistence.update_refresh_token(
+    rotated = refresh_token_persistence.update_refresh_token(
         existing_token.id,
         UpdateRefreshTokenRequest(
             revoked_at=datetime.now(UTC),
             replaced_by=new_token_id,
         ),
     )
+    if rotated is None:
+        raise InvalidOrExpiredRefreshTokenError(INVALID_REFRESH_TOKEN)
     return RefreshAuthTokenResponse(
         access_token=create_access_token(user, settings.access_ttl_seconds),
         refresh_token=new_token,

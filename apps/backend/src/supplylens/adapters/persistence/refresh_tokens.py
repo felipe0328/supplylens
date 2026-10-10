@@ -33,23 +33,26 @@ class RefreshTokenPersistenceAdapter(RefreshTokenPersistence):
         return map_model_refresh_token_to_abstraction(new_refresh_token)
 
     def get_refresh_token_by_id(self, id: int) -> RefreshToken | None:
-        refresh_token = self._session.get(RefreshTokenModel, id)
+        refresh_token = self._session.get(RefreshTokenModel, id, with_for_update=True)
         return map_model_refresh_token_to_abstraction(refresh_token)
 
     def get_refresh_token(self, hashed_token: str) -> RefreshToken | None:
-        statement = select(RefreshTokenModel).where(
-            RefreshTokenModel.hashed_token == hashed_token,
-            RefreshTokenModel.expires_at > datetime.now(UTC),
+        statement = (
+            select(RefreshTokenModel)
+            .where(RefreshTokenModel.hashed_token == hashed_token)
+            .with_for_update()
         )
         refresh_token = self._session.scalar(statement)
         return map_model_refresh_token_to_abstraction(refresh_token)
 
     def update_refresh_token(
         self, id: int, request: UpdateRefreshTokenRequest
-    ) -> RefreshToken:
-        existing_token = self._session.get(RefreshTokenModel, id)
+    ) -> RefreshToken | None:
+        existing_token = self._session.get(RefreshTokenModel, id, with_for_update=True)
         if existing_token is None:
             raise ValueError(f"Refresh token with id {id} not found")
+        if existing_token.revoked_at is not None:
+            return None
 
         existing_token.revoked_at = request.revoked_at
         existing_token.replaced_by = request.replaced_by

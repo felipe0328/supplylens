@@ -7,6 +7,13 @@ from supplylens.port.persistence.refresh_token import (
 )
 
 
+def refresh_token_is_expired(token: RefreshToken) -> bool:
+    expires_at = token.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    return expires_at <= datetime.now(UTC)
+
+
 def revoke_refresh_token_family(
     token: RefreshToken, persistence: RefreshTokenPersistence
 ) -> None:

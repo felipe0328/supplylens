@@ -38,9 +38,12 @@ class FakeRefreshTokenPersistence:
 
     def update_refresh_token(
         self, id: int, request: UpdateRefreshTokenRequest
-    ) -> RefreshToken:
+    ) -> RefreshToken | None:
+        current = self.by_id[id]
+        if current.revoked_at is not None:
+            return None
         updated = replace(
-            self.by_id[id],
+            current,
             revoked_at=request.revoked_at,
             replaced_by=request.replaced_by,
         )
@@ -57,12 +60,13 @@ def _token(
     raw_token: str = RAW_TOKEN,
     replaced_by: int | None = None,
     revoked_at: datetime | None = None,
+    expires_at: datetime = EXPIRES_AT,
 ) -> RefreshToken:
     return RefreshToken(
         id=token_id,
         user_id=USER_ID,
         hashed_token=hash_token(raw_token),
-        expires_at=EXPIRES_AT,
+        expires_at=expires_at,
         revoked_at=revoked_at,
         replaced_by=replaced_by,
     )
@@ -79,6 +83,38 @@ def test_logout_user_revokes_the_current_token() -> None:
     assert stored.replaced_by is None
     assert tokens.commits == 0
     assert tokens.get_refresh_token(hash_token(RAW_TOKEN)) is stored
+
+
+def test_logout_user_rejects_an_expired_token() -> None:
+    current = _token(expires_at=datetime(2020, 1, 1, tzinfo=UTC))
+    tokens = FakeRefreshTokenPersistence([current])
+
+    with pytest.raises(InvalidOrExpiredRefreshTokenError, match=INVALID_REFRESH_TOKEN):
+        logout_user(LogoutUserRequest(refresh_token=RAW_TOKEN), tokens)
+
+    assert tokens.commits == 0
+    assert tokens.by_id[current.id].revoked_at is None
+
+
+def test_logout_user_revokes_the_newer_token_when_an_expired_ancestor_is_reused() -> (
+    None
+):
+    revoked_at = datetime(2026, 10, 10, tzinfo=UTC)
+    old = _token(
+        1,
+        revoked_at=revoked_at,
+        replaced_by=2,
+        expires_at=datetime(2020, 1, 1, tzinfo=UTC),
+    )
+    current = _token(2, raw_token="synthetic-refresh-token-current")
+    tokens = FakeRefreshTokenPersistence([old, current])
+
+    with pytest.raises(InvalidOrExpiredRefreshTokenError, match=INVALID_REFRESH_TOKEN):
+        logout_user(LogoutUserRequest(refresh_token=RAW_TOKEN), tokens)
+
+    assert tokens.commits == 1
+    assert tokens.by_id[2].revoked_at is not None
+    assert tokens.by_id[2].replaced_by is None
 
 
 def test_logout_user_rejects_an_unknown_token() -> None:

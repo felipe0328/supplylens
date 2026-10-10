@@ -5,7 +5,7 @@ from supplylens.tools.token_hash import hash_token
 
 from .constants import INVALID_REFRESH_TOKEN
 from .exceptions import InvalidOrExpiredRefreshTokenError
-from .refresh_token_chain import revoke_refresh_token_family
+from .refresh_token_chain import refresh_token_is_expired, revoke_refresh_token_family
 
 
 @dataclass(frozen=True)
@@ -22,8 +22,13 @@ def logout_user(
     if existing_token is None:
         raise InvalidOrExpiredRefreshTokenError(INVALID_REFRESH_TOKEN)
 
-    revoke_refresh_token_family(existing_token, refresh_token_persistence)
     if existing_token.revoked_at is not None:
+        revoke_refresh_token_family(existing_token, refresh_token_persistence)
         # Keep the revocation when this request ends as an auth error.
         refresh_token_persistence.commit()
         raise InvalidOrExpiredRefreshTokenError(INVALID_REFRESH_TOKEN)
+
+    if refresh_token_is_expired(existing_token):
+        raise InvalidOrExpiredRefreshTokenError(INVALID_REFRESH_TOKEN)
+
+    revoke_refresh_token_family(existing_token, refresh_token_persistence)

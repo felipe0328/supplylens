@@ -2,7 +2,10 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import UUID
 
-from supplylens.controllers.users.refresh_token_chain import revoke_refresh_token_family
+from supplylens.controllers.users.refresh_token_chain import (
+    refresh_token_is_expired,
+    revoke_refresh_token_family,
+)
 from supplylens.port.persistence.refresh_token import (
     RefreshToken,
     UpdateRefreshTokenRequest,
@@ -21,9 +24,12 @@ class FakeRefreshTokenPersistence:
 
     def update_refresh_token(
         self, id: int, request: UpdateRefreshTokenRequest
-    ) -> RefreshToken:
+    ) -> RefreshToken | None:
+        current = self.by_id[id]
+        if current.revoked_at is not None:
+            return None
         updated = replace(
-            self.by_id[id],
+            current,
             revoked_at=request.revoked_at,
             replaced_by=request.replaced_by,
         )
@@ -36,15 +42,26 @@ def _token(
     *,
     replaced_by: int | None = None,
     revoked_at: datetime | None = None,
+    expires_at: datetime = EXPIRES_AT,
 ) -> RefreshToken:
     return RefreshToken(
         id=token_id,
         user_id=USER_ID,
         hashed_token=f"synthetic-hash-{token_id}",
-        expires_at=EXPIRES_AT,
+        expires_at=expires_at,
         revoked_at=revoked_at,
         replaced_by=replaced_by,
     )
+
+
+def test_refresh_token_is_expired_accepts_an_aware_future_timestamp() -> None:
+    assert refresh_token_is_expired(_token(1)) is False
+
+
+def test_refresh_token_is_expired_treats_a_naive_past_timestamp_as_utc() -> None:
+    expired = _token(1, expires_at=datetime(2020, 1, 1))
+
+    assert refresh_token_is_expired(expired) is True
 
 
 def test_revoke_refresh_token_family_revokes_the_current_token() -> None:
