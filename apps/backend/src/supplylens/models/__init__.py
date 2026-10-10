@@ -6,4 +6,5 @@ from .document import (
     DocumentUploadStatus,
 )
 from .processing_job import ProcessingJob, ProcessingJobState
+from .refresh_token import RefreshToken
 from .user import User, UserRole, UserStatus

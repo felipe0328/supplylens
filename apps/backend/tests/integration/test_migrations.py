@@ -56,7 +56,13 @@ def test_migrations_upgrade_downgrade_and_reupgrade_clean_postgres(
     config.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
     expected_head = ScriptDirectory.from_config(config).get_current_head()
     assert expected_head is not None
-    expected_tables = {"alembic_version", "documents", "processing_jobs", "users"}
+    expected_tables = {
+        "alembic_version",
+        "documents",
+        "processing_jobs",
+        "refresh_tokens",
+        "users",
+    }
 
     command.upgrade(config, "head")
 
