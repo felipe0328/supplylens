@@ -1,9 +1,13 @@
 from supplylens.models.document import Document as ModelDocument
 from supplylens.models.processing_job import ProcessingJob as ModelProcessingJob
+from supplylens.models.refresh_token import RefreshToken as ModelRefreshToken
 from supplylens.models.user import User as ModelUser
 from supplylens.port.persistence.documents import Document as AbstractDocument
 from supplylens.port.persistence.processing_job import (
     ProcessingJob as AbstractProcessingJob,
+)
+from supplylens.port.persistence.refresh_token import (
+    RefreshToken as AbstractRefreshToken,
 )
 from supplylens.port.persistence.users import User as AbstractUser
 
@@ -63,4 +67,19 @@ def map_model_user_to_abstraction(
         created_at=model_user.created_at,
         updated_at=model_user.updated_at,
         deleted_at=model_user.deleted_at,
+    )
+
+
+def map_model_refresh_token_to_abstraction(
+    model_refresh_token: ModelRefreshToken | None,
+) -> AbstractRefreshToken | None:
+    if model_refresh_token is None:
+        return None
+    return AbstractRefreshToken(
+        id=model_refresh_token.id,
+        user_id=model_refresh_token.user_id,
+        hashed_token=model_refresh_token.hashed_token,
+        expires_at=model_refresh_token.expires_at,
+        revoked_at=model_refresh_token.revoked_at,
+        replaced_by=model_refresh_token.replaced_by,
     )
