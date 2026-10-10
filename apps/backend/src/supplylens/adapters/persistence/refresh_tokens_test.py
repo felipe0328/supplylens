@@ -213,6 +213,30 @@ def test_get_expired_refresh_tokens_ids_returns_smaller_ids_first(
     assert current_id not in expired_ids
 
 
+def test_get_expired_refresh_tokens_ids_keeps_ancestors_of_a_live_token(
+    session: Session,
+) -> None:
+    adapter = RefreshTokenPersistenceAdapter(session)
+    oldest_id = _store(adapter, "synthetic-hash-oldest", PAST)
+    middle_id = _store(adapter, "synthetic-hash-middle", PAST)
+    current_id = _store(adapter, "synthetic-hash-current", FUTURE)
+    unrelated_id = _store(adapter, "synthetic-hash-unrelated", PAST)
+    adapter.update_refresh_token(
+        middle_id,
+        UpdateRefreshTokenRequest(revoked_at=REVOKED_AT, replaced_by=current_id),
+    )
+    adapter.update_refresh_token(
+        oldest_id,
+        UpdateRefreshTokenRequest(revoked_at=REVOKED_AT, replaced_by=middle_id),
+    )
+
+    expired_ids = adapter.get_expired_refresh_tokens_ids()
+
+    assert expired_ids == [unrelated_id]
+    assert oldest_id not in expired_ids
+    assert middle_id not in expired_ids
+
+
 def test_remove_refresh_token_deletes_the_row(session: Session) -> None:
     adapter = RefreshTokenPersistenceAdapter(session)
     token_id = _store(adapter, "synthetic-hash-current", FUTURE)

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from typing import List
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -61,9 +62,23 @@ class RefreshTokenPersistenceAdapter(RefreshTokenPersistence):
         return map_model_refresh_token_to_abstraction(existing_token)
 
     def get_expired_refresh_tokens_ids(self) -> List[int]:
+        now = datetime.now(UTC)
+        live_tokens = (
+            select(RefreshTokenModel.id)
+            .where(RefreshTokenModel.expires_at >= now)
+            .cte(name="live_refresh_tokens", recursive=True)
+        )
+        ancestors = select(RefreshTokenModel.id).join(
+            live_tokens,
+            RefreshTokenModel.replaced_by == live_tokens.c.id,
+        )
+        protected_tokens = live_tokens.union_all(ancestors)
         statement = (
             select(RefreshTokenModel.id)
-            .where(RefreshTokenModel.expires_at < datetime.now(UTC))
+            .where(
+                RefreshTokenModel.expires_at < now,
+                RefreshTokenModel.id.not_in(select(protected_tokens.c.id)),
+            )
             .order_by(RefreshTokenModel.id.asc())
         )
         expired_tokens = self._session.scalars(statement).all()
@@ -78,3 +93,15 @@ class RefreshTokenPersistenceAdapter(RefreshTokenPersistence):
 
     def commit(self) -> None:
         self._session.commit()
+
+
+def revoke_refresh_tokens_for_user(session: Session, user_id: UUID) -> None:
+    """End every live session for an account that is no longer the same incarnation."""
+    statement = select(RefreshTokenModel).where(
+        RefreshTokenModel.user_id == user_id,
+        RefreshTokenModel.revoked_at.is_(None),
+    )
+    revoked_at = datetime.now(UTC)
+    for token in session.scalars(statement):
+        token.revoked_at = revoked_at
+    session.flush()
