@@ -1,6 +1,6 @@
 ---
 name: create-pr
-description: Prepare, validate, and open a draft GitHub pull request for the current branch using the repository PR definition. Use when the user invokes $create-pr, writes /create-pr, or asks to create or open a draft PR; do not use for PR review, merge, or release work.
+description: Prepare, validate, and open a draft GitHub pull request for the current branch using the repository PR definition. Assign the draft to the person who invoked the skill, set the milestone that matches the confirmed ticket, and link that existing project task in Development. Do not add a second project card. Use when the user invokes $create-pr, writes /create-pr, or asks to create or open a draft PR; do not use for PR review, merge, or release work.
 ---
 
 # Create Draft Pull Request
@@ -9,7 +9,7 @@ Open one draft GitHub pull request that accurately represents the committed bran
 
 ## Authority and boundaries
 
-Invoking this skill authorizes read-only ticket lookup, running relevant configured pre-commit hooks, pushing the current branch when required, and opening one draft PR. It also authorizes a narrowly scoped follow-up commit for verified whitespace- or formatting-only fixes produced by pre-commit, but only on paths that were clean before the hooks ran and are part of the PR diff. Never amend, rebase, force-push, stage unrelated or pre-existing changes, modify tickets, mark a PR ready, or merge.
+Invoking this skill authorizes read-only ticket lookup, running relevant configured pre-commit hooks, pushing the current branch when required, and opening one draft PR. After that draft exists, it authorizes assigning the pull request to the authenticated user who invoked the skill, setting its repository milestone to match the confirmed issue, and linking that issue in the pull request Development section. The confirmed issue remains the only project card. This skill authorizes deleting a project item that is the new pull request, so the board does not show a second card. It also authorizes a narrowly scoped follow-up commit for verified whitespace- or formatting-only fixes produced by pre-commit, but only on paths that were clean before the hooks ran and are part of the PR diff. Never amend, rebase, force-push, stage unrelated or pre-existing changes, edit issue fields, add the pull request to a project, mark a PR ready, or merge.
 
 Read the repository-root `AGENTS.md` and `specifications/pull-request-definition.md` before drafting. Those files remain authoritative if this workflow and repository policy differ.
 
@@ -68,7 +68,13 @@ Build the PR body with the exact required structure:
 <safe, actionable reversal steps>
 ```
 
-Additional evidence may follow these sections when useful, but do not replace or rename them.
+When a confirmed GitHub issue exists, end the body with a closing reference to that issue number:
+
+```markdown
+Closes #<issue number>
+```
+
+That line is the Development link. Merging the pull request will close the issue. Do not add it when no GitHub issue was confirmed, and do not point it at a different issue. Additional evidence may follow the required sections when useful, but do not replace or rename them.
 
 ## Pre-commit gate
 
@@ -90,6 +96,23 @@ If a required check fails, sensitive data is present, the diff is inconsistent w
 2. Push the current branch's existing commits to its normal remote if it has no upstream. Never force-push.
 3. Create the PR as a draft against the resolved base using the prepared title and body. With `gh`, prefer a temporary body file outside the repository and `gh pr create --draft --base <base> --head <branch> --title <title> --body-file <file>`.
 4. Verify the created PR's URL, draft state, base branch, head branch, title, and body. Remove any temporary body file.
-5. Report the PR URL, ticket context used, checks actually run and results, any auto-fix commit created, and testing limitations. Keep the report concise.
+5. Place the draft using the assignment steps below, then verify assignee, milestone, the Development link, and that the pull request is not a project card.
+6. Report the PR URL, ticket context used, assignee, milestone, linked issue, confirmation that the existing task remains the only project card, checks actually run and results, any auto-fix commit created, and testing limitations. Keep the report concise.
 
-Stop after the verified draft is open. Do not mark it ready for review, request reviewers, add labels, merge it, or modify Jira unless the developer explicitly requests those actions.
+## Assign the requester and link the existing task
+
+Do this only after the draft pull request exists. The project card stays the confirmed GitHub issue. Do not add the pull request to a project, and do not set Status or Phase on a pull request item.
+
+The milestone comes from that issue. The milestone key is the ticket id without its final `.<number>`: `M1.5` has milestone key `M1`. A title matches that key when it starts with the key and the next character is absent or is not a digit or a dot, so `M1` matches `M1 - Auth & gated registration` and does not match `M10`.
+
+1. Resolve the requester with `gh api user --jq .login` and assign that user with `gh pr edit <number> --add-assignee @me`. Do not hardcode a login. This is the person who invoked the skill.
+2. Read the confirmed issue with `gh issue view`, including its number and milestone. Assignee and milestone commands do not need the `project` scope.
+3. Set the pull request milestone to the issue's milestone title with `gh pr edit <number> --milestone "<title>"`. If the issue has no milestone, use the single open repository milestone whose title matches the milestone key. If the issue milestone does not match that key, or zero or more than one milestone matches, stop and ask. Do not guess.
+4. Confirm the Development link from the body's `Closes #<issue number>` line. The pull request's closing issue must be that confirmed issue. That link is what shows the pull request on the existing task. Leave the issue's project Status and Phase unchanged.
+5. Check the project that contains the confirmed issue. If the new pull request is also an item on that project, delete only that pull request item with `gh project item-delete <number> --owner <owner> --id <item-id>`. Keep the issue item. Project commands need the `project` scope. If `gh` reports that the token is missing `project` or `read:project`, leave the open draft in place, keep the assignee and milestone already set, and stop. Report `gh auth refresh -s project` as the blocker. Do not start an interactive login.
+
+A pull request with no confirmed GitHub issue still gets the requester as assignee. Ask which milestone to use, and do not invent a `Closes` line or add a project card.
+
+If a placement command fails after the draft is open, report the pull request URL and the failing command. Do not close or delete the draft to undo a partial placement.
+
+Stop after the verified draft is placed. Do not mark it ready for review, request reviewers, add labels, merge it, edit the linked issue, or modify Jira unless the developer explicitly requests those actions.
