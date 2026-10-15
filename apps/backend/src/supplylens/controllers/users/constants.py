@@ -13,6 +13,10 @@ ACCOUNT_NOT_APPROVED = "This account was not approved."
 REGISTRATION_EXPIRED = "This registration expired. Register again."
 ACCOUNT_NOT_AVAILABLE = "This account is not available."
 
+USER_NOT_FOUND = "User not found."
+USER_NOT_AWAITING_APPROVAL = "This account is not awaiting approval."
+APPROVAL_FORBIDDEN = "Forbidden."
+
 ACCOUNT_STATUS_MESSAGES = {
     UserStatus.PENDING: ACCOUNT_WAITING_FOR_APPROVAL,
     UserStatus.REJECTED: ACCOUNT_NOT_APPROVED,

@@ -65,3 +65,17 @@ class RefreshResponse(BaseModel):
 
 class LogoutRequest(BaseModel):
     refresh_token: str = Field(description="The opaque refresh token.")
+
+
+class ListPendingUsersResponse(BaseModel):
+    users: list[User] = Field(description="The users that were listed.")
+
+
+class ChangeUserApprovalRequest(BaseModel):
+    user_id: UUID = Field(
+        description="The ID of the pending user to approve or reject."
+    )
+
+
+class ChangeUserApprovalResponse(BaseModel):
+    user: User = Field(description="The user after the approval decision.")

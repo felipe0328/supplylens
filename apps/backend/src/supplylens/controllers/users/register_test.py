@@ -152,11 +152,15 @@ def test_register_user_rejects_an_open_pending_account() -> None:
     assert persistence.retried == []
 
 
-def test_register_user_rejects_pending_without_an_expiry() -> None:
+def test_register_user_reuses_pending_without_an_expiry() -> None:
     persistence = FakeUserPersistence(_user(pending_expires_at=None))
 
-    with pytest.raises(UserPendingError):
-        register_user(_command(), persistence)
+    result = register_user(_command(), persistence)
+
+    assert result.user.id == USER_ID
+    assert result.user.status is UserStatus.PENDING
+    assert persistence.created == []
+    assert len(persistence.retried) == 1
 
 
 def test_register_user_rejects_an_accepted_account() -> None:

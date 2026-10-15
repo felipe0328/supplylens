@@ -659,3 +659,62 @@ def test_retry_super_admin_creation_rejects_a_duplicate_email(session: Session) 
     assert stored.email == "other@example.com"
     assert stored.status is UserStatus.EXPIRED
     assert adapter.get_user_by_email("operator@example.com") is not None
+
+
+def test_list_pending_users_returns_unexpired_pending_accounts(
+    session: Session,
+) -> None:
+    adapter = UserPersistenceAdapter(session)
+    active = adapter.create_user(_request("active@example.com"))
+    stale_null_expiry = adapter.create_user(_request("stale@example.com"))
+    stale_row = session.get(UserModel, stale_null_expiry.id)
+    assert stale_row is not None
+    stale_row.pending_expires_at = None
+    expired = adapter.create_user(_request("expired@example.com"))
+    expired_row = session.get(UserModel, expired.id)
+    assert expired_row is not None
+    expired_row.pending_expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    accepted = adapter.create_user(_request("accepted@example.com"))
+    _accept_as_admin(session, accepted.id)
+    session.flush()
+
+    listed = adapter.list_pending_users(limit=10, offset=0)
+
+    assert [user.email for user in listed] == ["active@example.com"]
+    assert listed[0].id == active.id
+
+
+def test_list_pending_users_orders_by_soonest_expiry(session: Session) -> None:
+    adapter = UserPersistenceAdapter(session)
+    later = adapter.create_user(_request("later@example.com"))
+    sooner = adapter.create_user(_request("sooner@example.com"))
+    later_row = session.get(UserModel, later.id)
+    sooner_row = session.get(UserModel, sooner.id)
+    assert later_row is not None
+    assert sooner_row is not None
+    later_row.pending_expires_at = datetime.now(UTC) + timedelta(hours=2)
+    sooner_row.pending_expires_at = datetime.now(UTC) + timedelta(hours=1)
+    session.flush()
+
+    listed = adapter.list_pending_users(limit=10, offset=0)
+
+    assert [user.email for user in listed] == [
+        "sooner@example.com",
+        "later@example.com",
+    ]
+
+
+def test_list_pending_users_applies_limit_and_offset(session: Session) -> None:
+    adapter = UserPersistenceAdapter(session)
+    first = adapter.create_user(_request("first@example.com"))
+    second = adapter.create_user(_request("second@example.com"))
+    third = adapter.create_user(_request("third@example.com"))
+    for index, user_id in enumerate((first.id, second.id, third.id)):
+        row = session.get(UserModel, user_id)
+        assert row is not None
+        row.pending_expires_at = datetime.now(UTC) + timedelta(hours=index + 1)
+    session.flush()
+
+    listed = adapter.list_pending_users(limit=1, offset=1)
+
+    assert [user.email for user in listed] == ["second@example.com"]

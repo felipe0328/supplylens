@@ -1,15 +1,30 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
+from supplylens.controllers.users.change_user_approval_status import (
+    ChangeUserApprovalStatusCommand,
+    ChangeUserApprovalStatusResult,
+    change_user_approval_status,
+)
 from supplylens.controllers.users.exceptions import (
     AccountNotAcceptedError,
+    ApprovalForbiddenError,
     InvalidCredentialsError,
     InvalidEmailAddressError,
     InvalidOrExpiredRefreshTokenError,
     InvalidPasswordError,
     UserAlreadyExistsError,
+    UserNotAwaitingApprovalError,
+    UserNotFoundError,
     UserPendingError,
+)
+from supplylens.controllers.users.list_pending_users import (
+    ListPendingUsersCommand,
+    ListPendingUsersResult,
+)
+from supplylens.controllers.users.list_pending_users import (
+    list_pending_users as list_pending_users_controller,
 )
 from supplylens.controllers.users.login_user import LoginUserCommand, login_user
 from supplylens.controllers.users.logout_user import LogoutUserRequest, logout_user
@@ -20,9 +35,14 @@ from supplylens.controllers.users.refresh_auth_token import (
 )
 from supplylens.controllers.users.register import RegisterUserCommand, register_user
 from supplylens.controllers.users.types import User as ControllerUser
+from supplylens.domain.auth import AccessPrincipal
+from supplylens.domain.users import UserStatus
 from supplylens.port.persistence.refresh_token import RefreshTokenPersistence
 from supplylens.port.persistence.users import UserPersistence
 from supplylens.schemas.users import (
+    ChangeUserApprovalRequest,
+    ChangeUserApprovalResponse,
+    ListPendingUsersResponse,
     LoginRequest,
     LoginResponse,
     LogoutRequest,
@@ -33,7 +53,11 @@ from supplylens.schemas.users import (
 )
 from supplylens.schemas.users import User as SchemaUser
 
-from .dependencies import get_refresh_token_persistence, get_user_persistence
+from .dependencies import (
+    get_refresh_token_persistence,
+    get_user_persistence,
+    required_admin,
+)
 from .errors import error_responses
 
 auth_router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -164,3 +188,85 @@ def logout(
         LogoutUserRequest(refresh_token=request.refresh_token),
         refresh_token_persistence,
     )
+
+
+@auth_router.get(
+    "/pending-users",
+    summary="List pending users awaiting approval",
+    responses=error_responses(validation=True),
+    dependencies=[Depends(required_admin)],
+)
+def list_pending_users(
+    user_persistence: Annotated[UserPersistence, Depends(get_user_persistence)],
+    limit: int = Query(default=100, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> ListPendingUsersResponse:
+    """Returns pending accounts that are still inside their approval window.
+    Expired, accepted, rejected, and deleted accounts are omitted. Requires an
+    accepted admin access token.
+    """
+    result: ListPendingUsersResult = list_pending_users_controller(
+        ListPendingUsersCommand(limit=limit, offset=offset),
+        user_persistence,
+    )
+    return ListPendingUsersResponse(
+        users=[_to_schema_user(user) for user in result.users]
+    )
+
+
+@auth_router.post(
+    "/approve-user",
+    summary="Approve a pending user",
+    responses=error_responses(
+        UserNotFoundError,
+        UserNotAwaitingApprovalError,
+        ApprovalForbiddenError,
+        validation=True,
+    ),
+)
+def approve_user(
+    request: ChangeUserApprovalRequest,
+    caller: Annotated[AccessPrincipal, Depends(required_admin)],
+    user_persistence: Annotated[UserPersistence, Depends(get_user_persistence)],
+) -> ChangeUserApprovalResponse:
+    """Marks an unexpired pending account as accepted. The deciding admin is
+    taken from the access token, not the request body.
+    """
+    result: ChangeUserApprovalStatusResult = change_user_approval_status(
+        ChangeUserApprovalStatusCommand(
+            user_id=request.user_id,
+            requested_by=caller.user_id,
+            status=UserStatus.ACCEPTED,
+        ),
+        user_persistence,
+    )
+    return ChangeUserApprovalResponse(user=_to_schema_user(result.user))
+
+
+@auth_router.post(
+    "/reject-user",
+    summary="Reject a pending user",
+    responses=error_responses(
+        UserNotFoundError,
+        UserNotAwaitingApprovalError,
+        ApprovalForbiddenError,
+        validation=True,
+    ),
+)
+def reject_user(
+    request: ChangeUserApprovalRequest,
+    caller: Annotated[AccessPrincipal, Depends(required_admin)],
+    user_persistence: Annotated[UserPersistence, Depends(get_user_persistence)],
+) -> ChangeUserApprovalResponse:
+    """Marks an unexpired pending account as rejected. The deciding admin is
+    taken from the access token, not the request body.
+    """
+    result: ChangeUserApprovalStatusResult = change_user_approval_status(
+        ChangeUserApprovalStatusCommand(
+            user_id=request.user_id,
+            requested_by=caller.user_id,
+            status=UserStatus.REJECTED,
+        ),
+        user_persistence,
+    )
+    return ChangeUserApprovalResponse(user=_to_schema_user(result.user))

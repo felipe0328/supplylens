@@ -1,18 +1,99 @@
 {
+  "editor.formatOnSave": true,
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+
   "[python]": {
     "editor.defaultFormatter": "charliermarsh.ruff",
     "editor.formatOnSave": true,
+    "editor.tabSize": 4,
+    "editor.rulers": [88],
     "editor.codeActionsOnSave": {
       "source.fixAll.ruff": "explicit",
       "source.organizeImports.ruff": "explicit"
     }
   },
-  "ruff.importStrategy": "fromEnvironment",
+  "[typescript]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": "explicit"
+    }
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": "explicit"
+    }
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2
+  },
+  "[json]": {
+    "editor.defaultFormatter": "vscode.json-language-features",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "vscode.json-language-features",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2
+  },
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2
+  },
+  "[markdown]": {
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2,
+    "editor.wordWrap": "on",
+    "files.trimTrailingWhitespace": false
+  },
+  "[toml]": {
+    "editor.defaultFormatter": "tamasfe.even-better-toml",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 4
+  },
+  "[css]": {
+    "editor.defaultFormatter": "vscode.css-language-features",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2
+  },
+  "[html]": {
+    "editor.defaultFormatter": "vscode.html-language-features",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2
+  },
+
+  "python.defaultInterpreterPath": "${workspaceFolder}/apps/backend/.venv/bin/python",
+  "python.analysis.extraPaths": ["${workspaceFolder}/apps/backend/src"],
+  "cursorpyright.analysis.extraPaths": ["${workspaceFolder}/apps/backend/src"],
   "python.testing.pytestEnabled": true,
-  "python.testing.pytestArgs": [
-    "apps/backend/tests",
-    "apps/backend/src"
-  ],
+  "python.testing.unittestEnabled": false,
+  "python.testing.cwd": "${workspaceFolder}/apps/backend",
+  "python.testing.pytestArgs": ["src"],
   "python.envFile": "${workspaceFolder}/.env",
-  "python.terminal.useEnvFile": true
+  "python.terminal.activateEnvironment": true,
+  "python.terminal.useEnvFile": true,
+
+  "ruff.configuration": "${workspaceFolder}/apps/backend/pyproject.toml",
+  "ruff.importStrategy": "fromEnvironment",
+  "ruff.interpreter": ["${workspaceFolder}/apps/backend/.venv/bin/python"],
+
+  "eslint.workingDirectories": [{ "mode": "auto" }],
+  "typescript.tsdk": "apps/web/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "vitest.rootConfig": "${workspaceFolder}/apps/web/vite.config.ts"
 }

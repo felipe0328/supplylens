@@ -1,0 +1,16 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "anysphere.cursorpyright",
+    "ms-python.debugpy",
+    "charliermarsh.ruff",
+    "dbaeumer.vscode-eslint",
+    "tamasfe.even-better-toml",
+    "redhat.vscode-yaml",
+    "ms-azuretools.vscode-containers",
+    "ms-azuretools.vscode-docker",
+    "humao.rest-client",
+    "editorconfig.editorconfig",
+    "vitest.explorer"
+  ]
+}

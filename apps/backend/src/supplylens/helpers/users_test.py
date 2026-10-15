@@ -21,8 +21,8 @@ def test_is_unexpired_pending_is_false_for_other_statuses(status: UserStatus) ->
     assert is_unexpired_pending(status, NOW + timedelta(hours=1), now=NOW) is False
 
 
-def test_is_unexpired_pending_treats_a_missing_expiry_as_open() -> None:
-    assert is_unexpired_pending(UserStatus.PENDING, None, now=NOW) is True
+def test_is_unexpired_pending_treats_a_missing_expiry_as_stale() -> None:
+    assert is_unexpired_pending(UserStatus.PENDING, None, now=NOW) is False
 
 
 def test_is_unexpired_pending_accepts_a_future_window() -> None:

@@ -178,6 +178,20 @@ class UserPersistenceAdapter(UserPersistence):
         revoke_refresh_tokens_for_user(self._session, id)
         self._session.flush()
 
+    def list_pending_users(self, limit: int, offset: int) -> list[User]:
+        statement = (
+            select(UserModel)
+            .where(
+                UserModel.status == UserStatus.PENDING,
+                UserModel.pending_expires_at > func.now(),
+            )
+            .order_by(UserModel.pending_expires_at.asc())
+            .limit(limit)
+            .offset(offset)
+        )
+        users = self._session.scalars(statement)
+        return [self._map_user(user) for user in users]
+
     def _map_user(self, model_user: UserModel) -> User:
         accepted_by = None
         if model_user.accepted_by is not None:

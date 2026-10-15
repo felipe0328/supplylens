@@ -24,3 +24,15 @@ class AccountNotAcceptedError(Exception):
 
 class InvalidOrExpiredRefreshTokenError(Exception):
     """The refresh token is invalid or expired."""
+
+
+class UserNotFoundError(Exception):
+    """The requested user does not exist."""
+
+
+class UserNotAwaitingApprovalError(Exception):
+    """The user is not inside an open pending approval window."""
+
+
+class ApprovalForbiddenError(Exception):
+    """The caller cannot approve or reject users."""
