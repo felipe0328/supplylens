@@ -1,5 +1,5 @@
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 from uuid import UUID
 
@@ -21,6 +21,10 @@ from supplylens.port.persistence.processing_job import ProcessingJob
 
 DOCUMENT_ID = UUID("00000000-0000-0000-0000-000000000001")
 OTHER_DOCUMENT_ID = UUID("00000000-0000-0000-0000-000000000002")
+NOW = datetime(2026, 10, 16, 12, 0, tzinfo=UTC)
+LEASE_OWNER = "synthetic-worker-1"
+LEASE_EXPIRES_AT = NOW + timedelta(minutes=5)
+MAX_ATTEMPTS = 3
 
 
 @pytest.fixture
@@ -236,3 +240,203 @@ def test_document_status_and_job_roll_back_together(session: Session) -> None:
     assert document.upload_status is DocumentUploadStatus.PENDING
     assert document.uploaded_at is None
     assert session.scalar(select(func.count()).select_from(ModelProcessingJob)) == 0
+
+
+def test_claim_next_job_claims_oldest_pending_job(session: Session) -> None:
+    session.add(
+        Document(id=OTHER_DOCUMENT_ID, filename="other-synthetic.pdf", size_bytes=256)
+    )
+    session.flush()
+    adapter = ProcessingJobPersistenceAdapter(session)
+    first_id = adapter.enqueue_new_job(DOCUMENT_ID)
+    second_id = adapter.enqueue_new_job(OTHER_DOCUMENT_ID)
+    session.flush()
+
+    claimed = adapter.claim_next_job(
+        LEASE_OWNER,
+        LEASE_EXPIRES_AT,
+        max_attempts=MAX_ATTEMPTS,
+        now=NOW,
+    )
+
+    assert claimed is not None
+    assert claimed.id == first_id
+    assert claimed.id != second_id
+    assert claimed.status is ProcessingJobState.PROCESSING
+    assert claimed.lease_owner == LEASE_OWNER
+    assert claimed.lease_expires_at == LEASE_EXPIRES_AT
+    assert claimed.attempts == 1
+    assert claimed.started_at == NOW
+    assert claimed.finished_at is None
+    assert claimed.error_code is None
+    assert claimed.error_message is None
+
+
+def test_claim_next_job_returns_none_when_queue_empty(session: Session) -> None:
+    adapter = ProcessingJobPersistenceAdapter(session)
+
+    assert (
+        adapter.claim_next_job(
+            LEASE_OWNER,
+            LEASE_EXPIRES_AT,
+            max_attempts=MAX_ATTEMPTS,
+            now=NOW,
+        )
+        is None
+    )
+
+
+def test_claim_next_job_skips_active_lease_and_terminal_states(
+    session: Session,
+) -> None:
+    session.add(
+        Document(id=OTHER_DOCUMENT_ID, filename="other-synthetic.pdf", size_bytes=256)
+    )
+    session.flush()
+    active = ModelProcessingJob(
+        document_id=DOCUMENT_ID,
+        status=ProcessingJobState.PROCESSING,
+        lease_owner="other-worker",
+        lease_expires_at=NOW + timedelta(minutes=1),
+        attempts=1,
+        started_at=NOW - timedelta(minutes=1),
+    )
+    succeeded = ModelProcessingJob(
+        document_id=OTHER_DOCUMENT_ID,
+        status=ProcessingJobState.SUCCEEDED,
+        attempts=1,
+        started_at=NOW - timedelta(minutes=2),
+        finished_at=NOW - timedelta(minutes=1),
+    )
+    session.add_all([active, succeeded])
+    session.commit()
+    adapter = ProcessingJobPersistenceAdapter(session)
+
+    assert (
+        adapter.claim_next_job(
+            LEASE_OWNER,
+            LEASE_EXPIRES_AT,
+            max_attempts=MAX_ATTEMPTS,
+            now=NOW,
+        )
+        is None
+    )
+
+
+def test_claim_next_job_reclaims_expired_lease_and_increments_attempts(
+    session: Session,
+) -> None:
+    existing = ModelProcessingJob(
+        document_id=DOCUMENT_ID,
+        status=ProcessingJobState.PROCESSING,
+        lease_owner="other-worker",
+        lease_expires_at=NOW - timedelta(seconds=1),
+        attempts=1,
+        started_at=NOW - timedelta(minutes=5),
+        error_code=17,
+        error_message="synthetic stale error",
+        finished_at=NOW - timedelta(minutes=1),
+    )
+    session.add(existing)
+    session.commit()
+    adapter = ProcessingJobPersistenceAdapter(session)
+
+    claimed = adapter.claim_next_job(
+        LEASE_OWNER,
+        LEASE_EXPIRES_AT,
+        max_attempts=MAX_ATTEMPTS,
+        now=NOW,
+    )
+
+    assert claimed is not None
+    assert claimed.id == existing.id
+    assert claimed.status is ProcessingJobState.PROCESSING
+    assert claimed.lease_owner == LEASE_OWNER
+    assert claimed.lease_expires_at == LEASE_EXPIRES_AT
+    assert claimed.attempts == 2
+    assert claimed.started_at == NOW
+    assert claimed.finished_at is None
+    assert claimed.error_code is None
+    assert claimed.error_message is None
+
+
+def test_claim_next_job_respects_max_attempts_on_expired_lease(
+    session: Session,
+) -> None:
+    session.add(
+        ModelProcessingJob(
+            document_id=DOCUMENT_ID,
+            status=ProcessingJobState.PROCESSING,
+            lease_owner="other-worker",
+            lease_expires_at=NOW - timedelta(seconds=1),
+            attempts=MAX_ATTEMPTS,
+            started_at=NOW - timedelta(minutes=5),
+        )
+    )
+    session.commit()
+    adapter = ProcessingJobPersistenceAdapter(session)
+
+    assert (
+        adapter.claim_next_job(
+            LEASE_OWNER,
+            LEASE_EXPIRES_AT,
+            max_attempts=MAX_ATTEMPTS,
+            now=NOW,
+        )
+        is None
+    )
+
+
+def test_claim_next_job_leaves_commit_to_caller(session: Session) -> None:
+    adapter = ProcessingJobPersistenceAdapter(session)
+    job_id = adapter.enqueue_new_job(DOCUMENT_ID)
+    session.commit()
+
+    claimed = adapter.claim_next_job(
+        LEASE_OWNER,
+        LEASE_EXPIRES_AT,
+        max_attempts=MAX_ATTEMPTS,
+        now=NOW,
+    )
+    assert claimed is not None
+    assert claimed.id == job_id
+
+    session.rollback()
+
+    restored = adapter.get_job_by_id(job_id)
+    assert restored is not None
+    assert restored.status is ProcessingJobState.PENDING
+    assert restored.lease_owner is None
+    assert restored.lease_expires_at is None
+    assert restored.started_at is None
+
+
+def test_claim_next_job_requests_skip_locked_claim_query() -> None:
+    # SQLite does not implement SKIP LOCKED: inspect PostgreSQL SQL, not concurrency.
+    session = Mock(spec=Session)
+    pending_job = ModelProcessingJob(
+        document_id=DOCUMENT_ID,
+        status=ProcessingJobState.PENDING,
+        attempts=1,
+    )
+    pending_job.id = 42
+    pending_job.created_at = NOW
+    session.scalar.return_value = pending_job
+
+    claimed = ProcessingJobPersistenceAdapter(session).claim_next_job(
+        LEASE_OWNER,
+        LEASE_EXPIRES_AT,
+        max_attempts=MAX_ATTEMPTS,
+        now=NOW,
+    )
+
+    assert claimed is not None
+    assert claimed.id == 42
+    claim_statement = session.scalar.call_args.args[0]
+    claim_sql = str(claim_statement.compile(dialect=postgresql.dialect()))
+    assert "FOR UPDATE" in claim_sql
+    assert "SKIP LOCKED" in claim_sql
+    assert "processing_jobs" in claim_sql
+    session.flush.assert_called_once_with()
+    session.commit.assert_not_called()
+    session.rollback.assert_not_called()

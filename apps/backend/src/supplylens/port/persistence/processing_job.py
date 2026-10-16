@@ -26,3 +26,12 @@ class ProcessingJobPersistence(Protocol):
 
     def get_job_by_id(self, id: int) -> ProcessingJob | None: ...
     def get_job_by_document_uuid(self, document_uuid: UUID) -> ProcessingJob | None: ...
+
+    def claim_next_job(
+        self,
+        lease_owner: str,
+        lease_expires_at: datetime,
+        *,
+        max_attempts: int,
+        now: datetime,
+    ) -> ProcessingJob | None: ...
