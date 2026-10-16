@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 from uuid import UUID
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select
@@ -12,16 +13,23 @@ from sqlalchemy.pool import StaticPool
 
 from supplylens.api import create_app
 from supplylens.config import AppEnvironment
+from supplylens.controllers.users.change_user_approval_status import (
+    ChangeUserApprovalStatusResult,
+)
 from supplylens.controllers.users.constants import INVALID_REFRESH_TOKEN
 from supplylens.controllers.users.exceptions import (
     AccountNotAcceptedError,
+    ApprovalForbiddenError,
     InvalidCredentialsError,
     InvalidEmailAddressError,
     InvalidOrExpiredRefreshTokenError,
     InvalidPasswordError,
     UserAlreadyExistsError,
+    UserNotAwaitingApprovalError,
+    UserNotFoundError,
     UserPendingError,
 )
+from supplylens.controllers.users.list_pending_users import ListPendingUsersResult
 from supplylens.controllers.users.login_user import LoginUserCommandResult
 from supplylens.controllers.users.refresh_auth_token import RefreshAuthTokenResponse
 from supplylens.controllers.users.register import RegisterUserCommandResult
@@ -930,3 +938,284 @@ def test_logout_api_revokes_the_newer_token_when_the_old_one_is_reused(
         assert rows[0].revoked_at is not None
         assert rows[1].revoked_at is not None
         assert rows[1].replaced_by is None
+
+
+ADMIN_USER_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+
+
+def _admin_bearer_headers() -> dict[str, str]:
+    token = jwt.encode(
+        {
+            "sub": str(ADMIN_USER_ID),
+            "role": "ADMIN",
+            "exp": datetime.now(UTC) + timedelta(minutes=15),
+        },
+        JWT_SECRET,
+        algorithm="HS256",
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _operator_bearer_headers() -> dict[str, str]:
+    token = jwt.encode(
+        {
+            "sub": str(USER_ID),
+            "role": "OPERATOR",
+            "exp": datetime.now(UTC) + timedelta(minutes=15),
+        },
+        JWT_SECRET,
+        algorithm="HS256",
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def pending_users_client(
+    monkeypatch: pytest.MonkeyPatch, jwt_environment: None
+) -> tuple[TestClient, Mock]:
+    app = create_app(AppEnvironment.TESTING)
+    app.dependency_overrides[get_user_persistence] = lambda: Mock()
+    controller = Mock(return_value=ListPendingUsersResult(users=[_controller_user()]))
+    monkeypatch.setattr(auth, "list_pending_users_controller", controller)
+    return TestClient(app, headers=_admin_bearer_headers()), controller
+
+
+def test_list_pending_users_returns_the_mapped_users(
+    pending_users_client: tuple[TestClient, Mock],
+) -> None:
+    client, controller = pending_users_client
+
+    response = client.get("/api/v1/auth/pending-users")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "users": [
+            {
+                "id": str(USER_ID),
+                "email": "operator@example.com",
+                "role": "OPERATOR",
+                "status": "PENDING",
+                "accepted_by": None,
+                "pending_expires_at": "2026-10-09T12:00:00Z",
+                "created_at": "2026-10-07T12:00:00Z",
+                "updated_at": "2026-10-07T12:00:00Z",
+                "deleted_at": None,
+            }
+        ]
+    }
+    command = controller.call_args.args[0]
+    assert command.limit == 100
+    assert command.offset == 0
+
+
+def test_list_pending_users_forwards_pagination(
+    pending_users_client: tuple[TestClient, Mock],
+) -> None:
+    client, controller = pending_users_client
+
+    response = client.get("/api/v1/auth/pending-users?limit=2&offset=5")
+
+    assert response.status_code == 200
+    command = controller.call_args.args[0]
+    assert command.limit == 2
+    assert command.offset == 5
+
+
+def test_list_pending_users_rejects_an_operator(
+    jwt_environment: None,
+) -> None:
+    app = create_app(AppEnvironment.TESTING)
+    app.dependency_overrides[get_user_persistence] = lambda: Mock()
+    client = TestClient(app, headers=_operator_bearer_headers())
+
+    response = client.get("/api/v1/auth/pending-users")
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Forbidden"}
+
+
+def test_list_pending_users_rejects_a_missing_token() -> None:
+    app = create_app(AppEnvironment.TESTING)
+    app.dependency_overrides[get_user_persistence] = lambda: Mock()
+    client = TestClient(app)
+
+    response = client.get("/api/v1/auth/pending-users")
+
+    assert response.status_code == 401
+
+
+def test_list_pending_users_rejects_an_invalid_limit(
+    pending_users_client: tuple[TestClient, Mock],
+) -> None:
+    client, _controller = pending_users_client
+
+    response = client.get("/api/v1/auth/pending-users?limit=0")
+
+    assert response.status_code == 422
+
+
+def test_list_pending_users_openapi_documents_admin_access() -> None:
+    schema = create_app(AppEnvironment.TESTING).openapi()
+    operation = schema["paths"]["/api/v1/auth/pending-users"]["get"]
+
+    assert operation["summary"] == "List pending users awaiting approval"
+    assert "admin" in operation["description"].lower()
+    assert "422" in operation["responses"]
+    assert schema["components"]["securitySchemes"]["HTTPBearer"]["scheme"] == "bearer"
+
+
+def _accepted_controller_user() -> ControllerUser:
+    return ControllerUser(
+        id=USER_ID,
+        email="operator@example.com",
+        role=UserRole.OPERATOR,
+        status=UserStatus.ACCEPTED,
+        accepted_by=ControllerUser(
+            id=ADMIN_USER_ID,
+            email="admin@example.com",
+            role=UserRole.ADMIN,
+            status=UserStatus.ACCEPTED,
+            accepted_by=None,
+            pending_expires_at=None,
+            created_at=CREATED_AT,
+            updated_at=CREATED_AT,
+            deleted_at=None,
+        ),
+        pending_expires_at=None,
+        created_at=CREATED_AT,
+        updated_at=CREATED_AT,
+        deleted_at=None,
+    )
+
+
+@pytest.fixture
+def approval_client(
+    monkeypatch: pytest.MonkeyPatch, jwt_environment: None
+) -> tuple[TestClient, Mock]:
+    app = create_app(AppEnvironment.TESTING)
+    app.dependency_overrides[get_user_persistence] = lambda: Mock()
+    controller = Mock(
+        return_value=ChangeUserApprovalStatusResult(user=_accepted_controller_user())
+    )
+    monkeypatch.setattr(auth, "change_user_approval_status", controller)
+    return TestClient(app, headers=_admin_bearer_headers()), controller
+
+
+def test_approve_user_returns_the_accepted_user(
+    approval_client: tuple[TestClient, Mock],
+) -> None:
+    client, controller = approval_client
+
+    response = client.post(
+        "/api/v1/auth/approve-user",
+        json={"user_id": str(USER_ID)},
+    )
+
+    assert response.status_code == 200
+    body = response.json()["user"]
+    assert body["id"] == str(USER_ID)
+    assert body["status"] == "ACCEPTED"
+    assert body["accepted_by"]["id"] == str(ADMIN_USER_ID)
+    assert "password_hash" not in body
+    command = controller.call_args.args[0]
+    assert command.user_id == USER_ID
+    assert command.requested_by == ADMIN_USER_ID
+    assert command.status is UserStatus.ACCEPTED
+
+
+def test_reject_user_returns_the_rejected_user(
+    approval_client: tuple[TestClient, Mock],
+) -> None:
+    client, controller = approval_client
+    rejected = replace(_accepted_controller_user(), status=UserStatus.REJECTED)
+    controller.return_value = ChangeUserApprovalStatusResult(user=rejected)
+
+    response = client.post(
+        "/api/v1/auth/reject-user",
+        json={"user_id": str(USER_ID)},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["user"]["status"] == "REJECTED"
+    command = controller.call_args.args[0]
+    assert command.user_id == USER_ID
+    assert command.requested_by == ADMIN_USER_ID
+    assert command.status is UserStatus.REJECTED
+
+
+@pytest.mark.parametrize(
+    ("path", "error", "status_code", "detail"),
+    [
+        (
+            "/api/v1/auth/approve-user",
+            UserNotFoundError("User not found."),
+            404,
+            "User not found.",
+        ),
+        (
+            "/api/v1/auth/reject-user",
+            UserNotAwaitingApprovalError("This account is not awaiting approval."),
+            409,
+            "This account is not awaiting approval.",
+        ),
+        (
+            "/api/v1/auth/approve-user",
+            ApprovalForbiddenError("Forbidden."),
+            403,
+            "Forbidden.",
+        ),
+    ],
+)
+def test_approval_routes_map_controller_errors(
+    approval_client: tuple[TestClient, Mock],
+    path: str,
+    error: Exception,
+    status_code: int,
+    detail: str,
+) -> None:
+    client, controller = approval_client
+    controller.side_effect = error
+
+    response = client.post(path, json={"user_id": str(USER_ID)})
+
+    assert response.status_code == status_code
+    assert response.json() == {"detail": detail}
+
+
+def test_approve_user_rejects_an_operator(jwt_environment: None) -> None:
+    app = create_app(AppEnvironment.TESTING)
+    app.dependency_overrides[get_user_persistence] = lambda: Mock()
+    client = TestClient(app, headers=_operator_bearer_headers())
+
+    response = client.post(
+        "/api/v1/auth/approve-user",
+        json={"user_id": str(USER_ID)},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Forbidden"}
+
+
+def test_reject_user_rejects_a_missing_token() -> None:
+    app = create_app(AppEnvironment.TESTING)
+    app.dependency_overrides[get_user_persistence] = lambda: Mock()
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/auth/reject-user",
+        json={"user_id": str(USER_ID)},
+    )
+
+    assert response.status_code == 401
+
+
+def test_approve_user_openapi_documents_errors() -> None:
+    schema = create_app(AppEnvironment.TESTING).openapi()
+    operation = schema["paths"]["/api/v1/auth/approve-user"]["post"]
+
+    assert operation["summary"] == "Approve a pending user"
+    assert "access token" in operation["description"]
+    assert "404" in operation["responses"]
+    assert "409" in operation["responses"]
+    assert "403" in operation["responses"]
+    assert "422" in operation["responses"]

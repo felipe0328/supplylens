@@ -11,7 +11,12 @@ from supplylens.adapters.persistence.users import (
     _require_user,
 )
 from supplylens.database.database import Base
-from supplylens.domain.users import DuplicateUserEmailError, UserRole, UserStatus
+from supplylens.domain.users import (
+    DuplicateUserEmailError,
+    PendingApprovalRequiredError,
+    UserRole,
+    UserStatus,
+)
 from supplylens.models.refresh_token import RefreshToken
 from supplylens.models.user import User as UserModel
 from supplylens.port.persistence.users import CreateUserRequest
@@ -280,6 +285,7 @@ def test_change_user_approval_status_records_the_admin(session: Session) -> None
     admin = adapter.create_user(_request("admin@example.com"))
     _accept_as_admin(session, admin.id)
     operator = adapter.create_user(_request())
+    token_id = _store_refresh_token(session, operator.id, "synthetic-hash-accepted")
 
     changed = adapter.change_user_approval_status(
         operator.id,
@@ -295,8 +301,6 @@ def test_change_user_approval_status_records_the_admin(session: Session) -> None
     assert stored is not None
     assert stored.accepted_by == admin.id
     assert stored.pending_expires_at is None
-    token_id = _store_refresh_token(session, operator.id, "synthetic-hash-accepted")
-    adapter.change_user_approval_status(operator.id, admin.id, UserStatus.ACCEPTED)
     token = session.get(RefreshToken, token_id)
     assert token is not None
     assert token.revoked_at is None
@@ -380,6 +384,51 @@ def test_change_user_approval_status_rejects_an_unaccepted_admin(
     session.flush()
 
     with pytest.raises(ValueError, match="not an accepted admin"):
+        adapter.change_user_approval_status(
+            operator.id,
+            admin.id,
+            UserStatus.ACCEPTED,
+        )
+
+    stored = session.get(UserModel, operator.id)
+    assert stored is not None
+    assert stored.status is UserStatus.PENDING
+
+
+def test_change_user_approval_status_rejects_a_second_decision(
+    session: Session,
+) -> None:
+    adapter = UserPersistenceAdapter(session)
+    admin = adapter.create_user(_request("admin@example.com"))
+    _accept_as_admin(session, admin.id)
+    operator = adapter.create_user(_request())
+    adapter.change_user_approval_status(operator.id, admin.id, UserStatus.ACCEPTED)
+
+    with pytest.raises(PendingApprovalRequiredError):
+        adapter.change_user_approval_status(
+            operator.id,
+            admin.id,
+            UserStatus.REJECTED,
+        )
+
+    stored = session.get(UserModel, operator.id)
+    assert stored is not None
+    assert stored.status is UserStatus.ACCEPTED
+
+
+def test_change_user_approval_status_rejects_an_elapsed_pending_window(
+    session: Session,
+) -> None:
+    adapter = UserPersistenceAdapter(session)
+    admin = adapter.create_user(_request("admin@example.com"))
+    _accept_as_admin(session, admin.id)
+    operator = adapter.create_user(_request())
+    stored = session.get(UserModel, operator.id)
+    assert stored is not None
+    stored.pending_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    session.flush()
+
+    with pytest.raises(PendingApprovalRequiredError):
         adapter.change_user_approval_status(
             operator.id,
             admin.id,
@@ -659,3 +708,62 @@ def test_retry_super_admin_creation_rejects_a_duplicate_email(session: Session) 
     assert stored.email == "other@example.com"
     assert stored.status is UserStatus.EXPIRED
     assert adapter.get_user_by_email("operator@example.com") is not None
+
+
+def test_list_pending_users_returns_unexpired_pending_accounts(
+    session: Session,
+) -> None:
+    adapter = UserPersistenceAdapter(session)
+    active = adapter.create_user(_request("active@example.com"))
+    stale_null_expiry = adapter.create_user(_request("stale@example.com"))
+    stale_row = session.get(UserModel, stale_null_expiry.id)
+    assert stale_row is not None
+    stale_row.pending_expires_at = None
+    expired = adapter.create_user(_request("expired@example.com"))
+    expired_row = session.get(UserModel, expired.id)
+    assert expired_row is not None
+    expired_row.pending_expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    accepted = adapter.create_user(_request("accepted@example.com"))
+    _accept_as_admin(session, accepted.id)
+    session.flush()
+
+    listed = adapter.list_pending_users(limit=10, offset=0)
+
+    assert [user.email for user in listed] == ["active@example.com"]
+    assert listed[0].id == active.id
+
+
+def test_list_pending_users_orders_by_soonest_expiry(session: Session) -> None:
+    adapter = UserPersistenceAdapter(session)
+    later = adapter.create_user(_request("later@example.com"))
+    sooner = adapter.create_user(_request("sooner@example.com"))
+    later_row = session.get(UserModel, later.id)
+    sooner_row = session.get(UserModel, sooner.id)
+    assert later_row is not None
+    assert sooner_row is not None
+    later_row.pending_expires_at = datetime.now(UTC) + timedelta(hours=2)
+    sooner_row.pending_expires_at = datetime.now(UTC) + timedelta(hours=1)
+    session.flush()
+
+    listed = adapter.list_pending_users(limit=10, offset=0)
+
+    assert [user.email for user in listed] == [
+        "sooner@example.com",
+        "later@example.com",
+    ]
+
+
+def test_list_pending_users_applies_limit_and_offset(session: Session) -> None:
+    adapter = UserPersistenceAdapter(session)
+    first = adapter.create_user(_request("first@example.com"))
+    second = adapter.create_user(_request("second@example.com"))
+    third = adapter.create_user(_request("third@example.com"))
+    for index, user_id in enumerate((first.id, second.id, third.id)):
+        row = session.get(UserModel, user_id)
+        assert row is not None
+        row.pending_expires_at = datetime.now(UTC) + timedelta(hours=index + 1)
+    session.flush()
+
+    listed = adapter.list_pending_users(limit=1, offset=1)
+
+    assert [user.email for user in listed] == ["second@example.com"]

@@ -6,7 +6,12 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from supplylens.domain.users import DuplicateUserEmailError, UserRole, UserStatus
+from supplylens.domain.users import (
+    DuplicateUserEmailError,
+    PendingApprovalRequiredError,
+    UserRole,
+    UserStatus,
+)
 from supplylens.helpers.users import is_unexpired_pending
 from supplylens.models.user import User as UserModel
 from supplylens.port.persistence.users import (
@@ -144,6 +149,10 @@ class UserPersistenceAdapter(UserPersistence):
         user = self._session.get(UserModel, id, with_for_update=True)
         if user is None:
             raise ValueError(f"User with id {id} not found")
+        if status in {UserStatus.ACCEPTED, UserStatus.REJECTED} and (
+            not is_unexpired_pending(user.status, user.pending_expires_at)
+        ):
+            raise PendingApprovalRequiredError(id)
         actor = self._require_accepted_admin(accepted_by)
         user.accepted_by = actor.id
         user.status = status
@@ -177,6 +186,20 @@ class UserPersistenceAdapter(UserPersistence):
         user.pending_expires_at = None
         revoke_refresh_tokens_for_user(self._session, id)
         self._session.flush()
+
+    def list_pending_users(self, limit: int, offset: int) -> list[User]:
+        statement = (
+            select(UserModel)
+            .where(
+                UserModel.status == UserStatus.PENDING,
+                UserModel.pending_expires_at > func.now(),
+            )
+            .order_by(UserModel.pending_expires_at.asc())
+            .limit(limit)
+            .offset(offset)
+        )
+        users = self._session.scalars(statement)
+        return [self._map_user(user) for user in users]
 
     def _map_user(self, model_user: UserModel) -> User:
         accepted_by = None

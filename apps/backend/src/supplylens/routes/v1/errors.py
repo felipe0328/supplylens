@@ -13,11 +13,14 @@ from supplylens.controllers.documents.exceptions import (
 from supplylens.controllers.users.constants import INVALID_REFRESH_TOKEN
 from supplylens.controllers.users.exceptions import (
     AccountNotAcceptedError,
+    ApprovalForbiddenError,
     InvalidCredentialsError,
     InvalidEmailAddressError,
     InvalidOrExpiredRefreshTokenError,
     InvalidPasswordError,
     UserAlreadyExistsError,
+    UserNotAwaitingApprovalError,
+    UserNotFoundError,
     UserPendingError,
 )
 from supplylens.port.storage.storage import StorageUnavailableError, UploadTooLargeError
@@ -112,6 +115,24 @@ HTTP_ERRORS: dict[type[Exception], HttpErrorSpec] = {
         status_code=status.HTTP_403_FORBIDDEN,
         description="The account is not accepted.",
         detail="This account is not available.",
+        use_exception_message=True,
+    ),
+    UserNotFoundError: HttpErrorSpec(
+        status_code=status.HTTP_404_NOT_FOUND,
+        description="The user was not found.",
+        detail="User not found.",
+        use_exception_message=True,
+    ),
+    UserNotAwaitingApprovalError: HttpErrorSpec(
+        status_code=status.HTTP_409_CONFLICT,
+        description="The user is not awaiting approval.",
+        detail="This account is not awaiting approval.",
+        use_exception_message=True,
+    ),
+    ApprovalForbiddenError: HttpErrorSpec(
+        status_code=status.HTTP_403_FORBIDDEN,
+        description="The caller cannot approve or reject users.",
+        detail="Forbidden.",
         use_exception_message=True,
     ),
 }

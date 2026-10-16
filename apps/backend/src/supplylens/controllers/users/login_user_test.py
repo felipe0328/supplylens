@@ -237,7 +237,10 @@ def test_login_user_rejects_accounts_that_are_not_accepted(
     status: UserStatus,
     message: str,
 ) -> None:
-    persistence = FakeUserPersistence(_user(status=status))
+    overrides: dict[str, object] = {"status": status}
+    if status is UserStatus.PENDING:
+        overrides["pending_expires_at"] = datetime.now(UTC) + timedelta(hours=1)
+    persistence = FakeUserPersistence(_user(**overrides))
 
     with pytest.raises(AccountNotAcceptedError, match=f"^{message}$"):
         login_user(_command(), persistence, FakeRefreshTokenPersistence())
@@ -253,6 +256,22 @@ def test_login_user_treats_an_elapsed_pending_window_as_expired(
             status=UserStatus.PENDING,
             pending_expires_at=datetime.now(UTC) - timedelta(seconds=1),
         )
+    )
+
+    with pytest.raises(
+        AccountNotAcceptedError,
+        match="^This registration expired. Register again.$",
+    ):
+        login_user(_command(), persistence, FakeRefreshTokenPersistence())
+
+    assert persistence.updated == []
+
+
+def test_login_user_treats_pending_without_an_expiry_as_expired(
+    jwt_settings: None,
+) -> None:
+    persistence = FakeUserPersistence(
+        _user(status=UserStatus.PENDING, pending_expires_at=None)
     )
 
     with pytest.raises(
