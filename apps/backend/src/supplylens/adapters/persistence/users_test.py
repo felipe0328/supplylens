@@ -11,7 +11,12 @@ from supplylens.adapters.persistence.users import (
     _require_user,
 )
 from supplylens.database.database import Base
-from supplylens.domain.users import DuplicateUserEmailError, UserRole, UserStatus
+from supplylens.domain.users import (
+    DuplicateUserEmailError,
+    PendingApprovalRequiredError,
+    UserRole,
+    UserStatus,
+)
 from supplylens.models.refresh_token import RefreshToken
 from supplylens.models.user import User as UserModel
 from supplylens.port.persistence.users import CreateUserRequest
@@ -280,6 +285,7 @@ def test_change_user_approval_status_records_the_admin(session: Session) -> None
     admin = adapter.create_user(_request("admin@example.com"))
     _accept_as_admin(session, admin.id)
     operator = adapter.create_user(_request())
+    token_id = _store_refresh_token(session, operator.id, "synthetic-hash-accepted")
 
     changed = adapter.change_user_approval_status(
         operator.id,
@@ -295,8 +301,6 @@ def test_change_user_approval_status_records_the_admin(session: Session) -> None
     assert stored is not None
     assert stored.accepted_by == admin.id
     assert stored.pending_expires_at is None
-    token_id = _store_refresh_token(session, operator.id, "synthetic-hash-accepted")
-    adapter.change_user_approval_status(operator.id, admin.id, UserStatus.ACCEPTED)
     token = session.get(RefreshToken, token_id)
     assert token is not None
     assert token.revoked_at is None
@@ -380,6 +384,51 @@ def test_change_user_approval_status_rejects_an_unaccepted_admin(
     session.flush()
 
     with pytest.raises(ValueError, match="not an accepted admin"):
+        adapter.change_user_approval_status(
+            operator.id,
+            admin.id,
+            UserStatus.ACCEPTED,
+        )
+
+    stored = session.get(UserModel, operator.id)
+    assert stored is not None
+    assert stored.status is UserStatus.PENDING
+
+
+def test_change_user_approval_status_rejects_a_second_decision(
+    session: Session,
+) -> None:
+    adapter = UserPersistenceAdapter(session)
+    admin = adapter.create_user(_request("admin@example.com"))
+    _accept_as_admin(session, admin.id)
+    operator = adapter.create_user(_request())
+    adapter.change_user_approval_status(operator.id, admin.id, UserStatus.ACCEPTED)
+
+    with pytest.raises(PendingApprovalRequiredError):
+        adapter.change_user_approval_status(
+            operator.id,
+            admin.id,
+            UserStatus.REJECTED,
+        )
+
+    stored = session.get(UserModel, operator.id)
+    assert stored is not None
+    assert stored.status is UserStatus.ACCEPTED
+
+
+def test_change_user_approval_status_rejects_an_elapsed_pending_window(
+    session: Session,
+) -> None:
+    adapter = UserPersistenceAdapter(session)
+    admin = adapter.create_user(_request("admin@example.com"))
+    _accept_as_admin(session, admin.id)
+    operator = adapter.create_user(_request())
+    stored = session.get(UserModel, operator.id)
+    assert stored is not None
+    stored.pending_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    session.flush()
+
+    with pytest.raises(PendingApprovalRequiredError):
         adapter.change_user_approval_status(
             operator.id,
             admin.id,

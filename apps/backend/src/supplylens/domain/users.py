@@ -16,3 +16,7 @@ class UserStatus(enum.Enum):
 
 class DuplicateUserEmailError(Exception):
     """An insert used an email that is already stored."""
+
+
+class PendingApprovalRequiredError(Exception):
+    """Approve or reject requires an unexpired pending account."""

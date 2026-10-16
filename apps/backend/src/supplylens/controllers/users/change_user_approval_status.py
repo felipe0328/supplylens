@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from supplylens.domain.users import UserRole, UserStatus
+from supplylens.domain.users import PendingApprovalRequiredError, UserRole, UserStatus
 from supplylens.helpers.users import is_unexpired_pending
 from supplylens.port.persistence.users import User as PortUser
 from supplylens.port.persistence.users import UserPersistence
@@ -47,9 +47,12 @@ def change_user_approval_status(
     actor = user_persistence.get_user_by_id(req.requested_by)
     _require_accepted_admin(actor)
 
-    updated_user = user_persistence.change_user_approval_status(
-        req.user_id, req.requested_by, req.status
-    )
+    try:
+        updated_user = user_persistence.change_user_approval_status(
+            req.user_id, req.requested_by, req.status
+        )
+    except PendingApprovalRequiredError:
+        raise UserNotAwaitingApprovalError(USER_NOT_AWAITING_APPROVAL) from None
     return ChangeUserApprovalStatusResult(
         user=map_port_user_to_controller_user(updated_user)
     )

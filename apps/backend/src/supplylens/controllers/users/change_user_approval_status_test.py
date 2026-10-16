@@ -12,7 +12,7 @@ from supplylens.controllers.users.exceptions import (
     UserNotAwaitingApprovalError,
     UserNotFoundError,
 )
-from supplylens.domain.users import UserRole, UserStatus
+from supplylens.domain.users import PendingApprovalRequiredError, UserRole, UserStatus
 from supplylens.port.persistence.users import User as PortUser
 
 USER_ID = UUID("12345678-1234-5678-1234-567812345678")
@@ -28,9 +28,11 @@ class FakeUserPersistence:
         *,
         target: PortUser | None = None,
         actor: PortUser | None = None,
+        update_error: Exception | None = None,
     ) -> None:
         self._users = {user.id: user for user in (target, actor) if user is not None}
         self.calls: list[tuple[UUID, UUID, UserStatus]] = []
+        self.update_error = update_error
 
     def get_user_by_id(self, id: UUID) -> PortUser | None:
         return self._users.get(id)
@@ -39,6 +41,8 @@ class FakeUserPersistence:
         self, id: UUID, accepted_by: UUID, status: UserStatus
     ) -> PortUser:
         self.calls.append((id, accepted_by, status))
+        if self.update_error is not None:
+            raise self.update_error
         target = self._users[id]
         actor = self._users[accepted_by]
         return PortUser(
@@ -244,3 +248,23 @@ def test_change_user_approval_status_rejects_unsupported_statuses() -> None:
         )
 
     assert persistence.calls == []
+
+
+def test_change_user_approval_status_maps_a_locked_pending_recheck_failure() -> None:
+    persistence = FakeUserPersistence(
+        target=_pending_user(),
+        actor=_admin(),
+        update_error=PendingApprovalRequiredError(USER_ID),
+    )
+
+    with pytest.raises(UserNotAwaitingApprovalError, match="not awaiting approval"):
+        change_user_approval_status(
+            ChangeUserApprovalStatusCommand(
+                user_id=USER_ID,
+                requested_by=ADMIN_ID,
+                status=UserStatus.ACCEPTED,
+            ),
+            persistence,
+        )
+
+    assert persistence.calls == [(USER_ID, ADMIN_ID, UserStatus.ACCEPTED)]
