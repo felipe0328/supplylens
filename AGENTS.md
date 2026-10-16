@@ -15,8 +15,25 @@ SupplyLens turns supplier purchase PDFs into reviewable, traceable purchase and 
 
 - `docs/SupplyLens-MVP-Definition-v0.1.md` is the product-scope source of truth.
 - `docs/SupplyLens-Architecture-v0.1.md` is the technical design reference and intended modular direction.
+- `docs/document-upload-storage-architecture.md` is the upload, object-storage, and document-lifecycle design for the existing document API.
 - `specifications/` contains reusable engineering-process definitions. Follow `specifications/pull-request-definition.md` for pull requests.
 - Keep real supplier data, credentials, customer information, and private pricing policies out of the repository.
+
+## Tracking (GitHub Project, not Jira)
+
+Planning and delivery live on GitHub for this repository (`felipe0328/supplylens`). Do not look for Atlassian/Jira tickets unless the developer explicitly points there.
+
+| Resource | Location |
+| --- | --- |
+| Project board | https://github.com/users/felipe0328/projects/4 (`SupplyLens`, project number `4`, owner `felipe0328`) |
+| Wiki (MVP scope/plan) | https://github.com/felipe0328/supplylens/wiki |
+| Milestones (M1–M7) | https://github.com/felipe0328/supplylens/milestones |
+
+- Work tasks are GitHub issues with dotted ids in the title (`M2.1`, `M2.2`, …). Branch names use an underscore (`M2_1` for `M2.1`).
+- Milestone titles start with the milestone key (`M2 - Document extraction worker`). The key for ticket `M2.1` is `M2`.
+- Epics are parent issues (for example `#15` for M2). Keep epics off the Kanban; board cards are work tasks only. Project field `Phase` groups work (for example `M2 — Extraction`).
+- When resolving a ticket, prefer `gh issue view` / `gh issue list --search "<id> in:title"`. Use `gh project` only when the token has `project` / `read:project` scope (`gh auth refresh -s project`).
+- Wiki pages `MVP Scope`, `MVP Plan`, `Auth design`, and `Decisions log` are the living planning source; repo `docs/` remain the detailed product/architecture specs.
 
 ## Current Implementation Snapshot
 
