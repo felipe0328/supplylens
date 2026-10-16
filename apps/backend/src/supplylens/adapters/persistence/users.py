@@ -2,7 +2,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -225,3 +225,24 @@ class UserPersistenceAdapter(UserPersistence):
                 self._session.flush()
         except IntegrityError as exc:
             raise DuplicateUserEmailError(email) from exc
+
+    def expire_pending_users(self, *, now: datetime | None = None) -> None:
+        cutoff = now or datetime.now(UTC)
+        if cutoff.tzinfo is None:
+            cutoff = cutoff.replace(tzinfo=UTC)
+        else:
+            cutoff = cutoff.astimezone(UTC)
+        statement = (
+            update(UserModel)
+            .where(
+                UserModel.status == UserStatus.PENDING,
+                or_(
+                    UserModel.pending_expires_at.is_(None),
+                    UserModel.pending_expires_at <= cutoff,
+                ),
+            )
+            .values(status=UserStatus.EXPIRED)
+            .execution_options(synchronize_session="fetch")
+        )
+        self._session.execute(statement)
+        self._session.flush()

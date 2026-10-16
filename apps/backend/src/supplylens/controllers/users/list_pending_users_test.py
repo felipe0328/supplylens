@@ -17,6 +17,10 @@ class FakeUserPersistence:
     def __init__(self, users: list[PortUser] | None = None) -> None:
         self._users = users or []
         self.calls: list[tuple[int, int]] = []
+        self.expire_calls = 0
+
+    def expire_pending_users(self) -> None:
+        self.expire_calls += 1
 
     def list_pending_users(self, limit: int, offset: int) -> list[PortUser]:
         self.calls.append((limit, offset))
@@ -53,6 +57,7 @@ def test_list_pending_users_maps_persistence_rows() -> None:
         persistence,
     )
 
+    assert persistence.expire_calls == 1
     assert persistence.calls == [(10, 0)]
     assert [user.id for user in result.users] == [USER_ID, OTHER_ID]
     assert [user.email for user in result.users] == [
@@ -67,6 +72,7 @@ def test_list_pending_users_forwards_pagination() -> None:
 
     list_pending_users(ListPendingUsersCommand(limit=2, offset=5), persistence)
 
+    assert persistence.expire_calls == 1
     assert persistence.calls == [(2, 5)]
 
 
