@@ -34,6 +34,10 @@ class FakeUserPersistence:
         self.retried: list[tuple[UUID, CreateUserRequest]] = []
         self.retry_error: Exception | None = None
         self.create_error: Exception | None = None
+        self.expire_calls = 0
+
+    def expire_pending_users(self) -> None:
+        self.expire_calls += 1
 
     def get_user_by_email(self, email: str) -> PortUser | None:
         index = min(self._lookups, len(self._existing) - 1)
@@ -104,6 +108,7 @@ def test_register_user_creates_a_pending_account() -> None:
     assert result.user.email == "operator@example.com"
     assert result.user.status is UserStatus.PENDING
     assert not hasattr(result.user, "password_hash")
+    assert persistence.expire_calls == 1
     assert len(persistence.created) == 1
     assert persistence.retried == []
     assert verify_password(PASSWORD, persistence.created[0].password_hash)[0]

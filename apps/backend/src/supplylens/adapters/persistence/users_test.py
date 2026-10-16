@@ -710,6 +710,87 @@ def test_retry_super_admin_creation_rejects_a_duplicate_email(session: Session) 
     assert adapter.get_user_by_email("operator@example.com") is not None
 
 
+def test_expire_pending_users_marks_elapsed_and_null_expiry_rows(
+    session: Session,
+) -> None:
+    adapter = UserPersistenceAdapter(session)
+    frozen_now = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
+    active = adapter.create_user(_request("active@example.com"))
+    elapsed = adapter.create_user(_request("elapsed@example.com"))
+    exact = adapter.create_user(_request("exact@example.com"))
+    missing_expiry = adapter.create_user(_request("missing@example.com"))
+    accepted = adapter.create_user(_request("accepted@example.com"))
+    _accept_as_admin(session, accepted.id)
+
+    active_row = session.get(UserModel, active.id)
+    elapsed_row = session.get(UserModel, elapsed.id)
+    exact_row = session.get(UserModel, exact.id)
+    missing_row = session.get(UserModel, missing_expiry.id)
+    assert active_row is not None
+    assert elapsed_row is not None
+    assert exact_row is not None
+    assert missing_row is not None
+    active_row.pending_expires_at = frozen_now + timedelta(hours=1)
+    elapsed_row.pending_expires_at = frozen_now - timedelta(seconds=1)
+    exact_row.pending_expires_at = frozen_now
+    missing_row.pending_expires_at = None
+    session.flush()
+
+    adapter.expire_pending_users(now=frozen_now)
+
+    assert session.get(UserModel, active.id).status is UserStatus.PENDING
+    assert session.get(UserModel, elapsed.id).status is UserStatus.EXPIRED
+    assert session.get(UserModel, exact.id).status is UserStatus.EXPIRED
+    assert session.get(UserModel, missing_expiry.id).status is UserStatus.EXPIRED
+    assert session.get(UserModel, accepted.id).status is UserStatus.ACCEPTED
+
+
+def test_expire_pending_users_treats_a_naive_cutoff_as_utc(
+    session: Session,
+) -> None:
+    adapter = UserPersistenceAdapter(session)
+    frozen_now = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
+    user = adapter.create_user(_request("naive@example.com"))
+    stored = session.get(UserModel, user.id)
+    assert stored is not None
+    stored.pending_expires_at = frozen_now
+    session.flush()
+
+    adapter.expire_pending_users(now=frozen_now.replace(tzinfo=None))
+
+    assert session.get(UserModel, user.id).status is UserStatus.EXPIRED
+
+
+def test_expire_pending_users_then_retry_reopens_the_account(
+    session: Session,
+) -> None:
+    adapter = UserPersistenceAdapter(session)
+    frozen_now = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
+    user = adapter.create_user(_request("operator@example.com"))
+    stored = session.get(UserModel, user.id)
+    assert stored is not None
+    stored.pending_expires_at = frozen_now - timedelta(minutes=1)
+    session.flush()
+
+    adapter.expire_pending_users(now=frozen_now)
+    expired = session.get(UserModel, user.id)
+    assert expired is not None
+    assert expired.status is UserStatus.EXPIRED
+
+    reused = adapter.retry_user_creation(
+        user.id,
+        CreateUserRequest(
+            email="operator@example.com",
+            password_hash="synthetic-retry-hash",
+        ),
+    )
+
+    assert reused.id == user.id
+    assert reused.status is UserStatus.PENDING
+    assert reused.pending_expires_at is not None
+    assert reused.pending_expires_at > datetime.now(UTC)
+
+
 def test_list_pending_users_returns_unexpired_pending_accounts(
     session: Session,
 ) -> None:

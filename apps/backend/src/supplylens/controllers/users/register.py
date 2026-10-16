@@ -12,6 +12,7 @@ from supplylens.tools.encryption import hash_password
 
 from .constants import ACCOUNT_ALREADY_EXISTS, EMAIL_PENDING
 from .exceptions import UserAlreadyExistsError, UserPendingError
+from .expire_pending_users import expire_pending_users
 from .mappers import map_port_user_to_controller_user
 from .validation import validate_email_address, validate_password
 
@@ -32,6 +33,8 @@ def register_user(
 ) -> RegisterUserCommandResult:
     validated_email = validate_email_address(req.email)
     validated_password = validate_password(req.password)
+
+    expire_pending_users(persistence)
 
     existing_user = persistence.get_user_by_email(validated_email)
     if existing_user is not None:
