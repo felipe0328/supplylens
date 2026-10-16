@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid7
 
-from sqlalchemy import DateTime, ForeignKey, Uuid, func
+from sqlalchemy import DateTime, ForeignKey, Index, Uuid, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from supplylens.database.database import Base
@@ -10,6 +10,13 @@ from supplylens.domain.users import UserRole, UserStatus
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index(
+            "ix_users_pending_expires_at",
+            "pending_expires_at",
+            postgresql_where=text("status = 'PENDING'"),
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
 

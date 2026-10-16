@@ -26,6 +26,11 @@ def session() -> Iterator[Session]:
         engine.dispose()
 
 
+def test_user_declares_a_pending_expiry_index() -> None:
+    index_names = {index.name for index in User.__table__.indexes}
+    assert "ix_users_pending_expires_at" in index_names
+
+
 def test_user_defaults_and_nullable_fields(session: Session) -> None:
     user = User(email="operator@example.com", password_hash="synthetic-hash")
     session.add(user)
