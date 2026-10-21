@@ -172,3 +172,54 @@ def get_jwt_settings() -> JWTSettings:
             refresh_ttl_seconds=os.getenv("JWT_REFRESH_TTL_SECONDS", "604800"),
         )
     return __jwt_settings
+
+
+@dataclass(frozen=True)
+class WorkerSettings:
+    interval_seconds: int
+    max_attempts: int
+    lease_duration_minutes: int
+    worker_id: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "interval_seconds",
+            _positive_int(self.interval_seconds, "WORKER_INTERVAL_SECONDS"),
+        )
+        object.__setattr__(
+            self,
+            "max_attempts",
+            _positive_int(self.max_attempts, "WORKER_MAX_ATTEMPTS"),
+        )
+        object.__setattr__(
+            self,
+            "lease_duration_minutes",
+            _positive_int(self.lease_duration_minutes, "WORKER_LEASE_DURATION_MINUTES"),
+        )
+        if self.worker_id is not None:
+            object.__setattr__(
+                self,
+                "worker_id",
+                _required_trimmed(self.worker_id, "WORKER_ID"),
+            )
+
+    @classmethod
+    def from_env(cls) -> "WorkerSettings":
+        worker_id = os.getenv("WORKER_ID")
+        trimmed_worker_id = worker_id.strip() if worker_id is not None else ""
+        return cls(
+            interval_seconds=_positive_int(
+                os.getenv("WORKER_INTERVAL_SECONDS", "5"),
+                "WORKER_INTERVAL_SECONDS",
+            ),
+            max_attempts=_positive_int(
+                os.getenv("WORKER_MAX_ATTEMPTS", "3"),
+                "WORKER_MAX_ATTEMPTS",
+            ),
+            lease_duration_minutes=_positive_int(
+                os.getenv("WORKER_LEASE_DURATION_MINUTES", "5"),
+                "WORKER_LEASE_DURATION_MINUTES",
+            ),
+            worker_id=trimmed_worker_id or None,
+        )
