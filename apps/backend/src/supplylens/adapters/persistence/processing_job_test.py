@@ -387,6 +387,67 @@ def test_claim_next_job_respects_max_attempts_on_expired_lease(
     )
 
 
+def test_fail_expired_exhausted_job_marks_failed_and_clears_lease(
+    session: Session,
+) -> None:
+    existing = ModelProcessingJob(
+        document_id=DOCUMENT_ID,
+        status=ProcessingJobState.PROCESSING,
+        lease_owner="other-worker",
+        lease_expires_at=NOW - timedelta(seconds=1),
+        attempts=MAX_ATTEMPTS,
+        started_at=NOW - timedelta(minutes=5),
+    )
+    session.add(existing)
+    session.commit()
+    adapter = ProcessingJobPersistenceAdapter(session)
+
+    failed = adapter.fail_expired_exhausted_job(
+        max_attempts=MAX_ATTEMPTS,
+        now=NOW,
+        finished_at=NOW,
+        error_code=1002,
+        error_message="Job exceeded maximum attempts after lease expiry",
+    )
+
+    assert failed is not None
+    assert failed.id == existing.id
+    assert failed.status is ProcessingJobState.FAILED
+    assert failed.lease_owner is None
+    assert failed.lease_expires_at is None
+    assert failed.error_code == 1002
+    assert failed.finished_at is not None
+    assert _as_utc(failed.finished_at) == NOW
+
+
+def test_fail_expired_exhausted_job_skips_reclaimable_expired_jobs(
+    session: Session,
+) -> None:
+    session.add(
+        ModelProcessingJob(
+            document_id=DOCUMENT_ID,
+            status=ProcessingJobState.PROCESSING,
+            lease_owner="other-worker",
+            lease_expires_at=NOW - timedelta(seconds=1),
+            attempts=MAX_ATTEMPTS - 1,
+            started_at=NOW - timedelta(minutes=5),
+        )
+    )
+    session.commit()
+    adapter = ProcessingJobPersistenceAdapter(session)
+
+    assert (
+        adapter.fail_expired_exhausted_job(
+            max_attempts=MAX_ATTEMPTS,
+            now=NOW,
+            finished_at=NOW,
+            error_code=1002,
+            error_message="Job exceeded maximum attempts after lease expiry",
+        )
+        is None
+    )
+
+
 def test_claim_next_job_leaves_commit_to_caller(session: Session) -> None:
     adapter = ProcessingJobPersistenceAdapter(session)
     job_id = adapter.enqueue_new_job(DOCUMENT_ID)

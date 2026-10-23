@@ -210,3 +210,41 @@ class ProcessingJobPersistenceAdapter(ProcessingJobPersistence):
         )
         result = self._session.scalar(statement)
         return map_model_processing_job_to_abstraction(result)
+
+    def fail_expired_exhausted_job(
+        self,
+        *,
+        max_attempts: int,
+        now: datetime,
+        finished_at: datetime,
+        error_code: int,
+        error_message: str,
+    ) -> AbstractProcessingJob | None:
+        # Abandoned final attempts: PROCESSING, lease expired, attempts exhausted.
+        statement = (
+            select(ProcessingJobModel)
+            .where(
+                ProcessingJobModel.status == ProcessingJobState.PROCESSING,
+                ProcessingJobModel.lease_expires_at.is_not(None),
+                ProcessingJobModel.lease_expires_at < now,
+                ProcessingJobModel.attempts >= max_attempts,
+            )
+            .order_by(
+                ProcessingJobModel.created_at.asc(),
+                ProcessingJobModel.id.asc(),
+            )
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        job = self._session.scalar(statement)
+        if job is None:
+            return None
+
+        job.status = ProcessingJobState.FAILED
+        job.finished_at = finished_at
+        job.error_code = error_code
+        job.error_message = error_message
+        job.lease_owner = None
+        job.lease_expires_at = None
+        self._session.flush()
+        return map_model_processing_job_to_abstraction(job)

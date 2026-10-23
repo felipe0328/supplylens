@@ -66,3 +66,13 @@ class ProcessingJobPersistence(Protocol):
         error_message: str,
         finished_at: datetime,
     ) -> ProcessingJob | None: ...
+
+    def fail_expired_exhausted_job(
+        self,
+        *,
+        max_attempts: int,
+        now: datetime,
+        finished_at: datetime,
+        error_code: int,
+        error_message: str,
+    ) -> ProcessingJob | None: ...

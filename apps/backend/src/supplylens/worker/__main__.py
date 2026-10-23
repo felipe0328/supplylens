@@ -14,10 +14,17 @@ from supplylens.controllers.processing_jobs.complete_job import (
     CompleteJobCommand,
     complete_job,
 )
-from supplylens.controllers.processing_jobs.constants import STUB_TRANSIENT_ERROR
+from supplylens.controllers.processing_jobs.constants import (
+    EXHAUSTED_LEASE_ERROR,
+    STUB_TRANSIENT_ERROR,
+)
 from supplylens.controllers.processing_jobs.extend_lease import (
     ExtendLeaseCommand,
     extend_lease,
+)
+from supplylens.controllers.processing_jobs.fail_expired_exhausted_job import (
+    FailExpiredExhaustedJobCommand,
+    fail_expired_exhausted_job,
 )
 from supplylens.controllers.processing_jobs.handle_processing_failure import (
     HandleProcessingFailureCommand,
@@ -33,8 +40,23 @@ def run() -> None:
 
     while True:
         with contextmanager(get_session)() as session:
+            persistence = ProcessingJobPersistenceAdapter(session)
+            finalized = fail_expired_exhausted_job(
+                persistence,
+                FailExpiredExhaustedJobCommand(
+                    max_attempts=settings.max_attempts,
+                    error_code=EXHAUSTED_LEASE_ERROR,
+                    error_message=("Job exceeded maximum attempts after lease expiry"),
+                ),
+            )
+            if finalized is not None:
+                print(
+                    f"Finalized exhausted job: {finalized.job.id} "
+                    f"status={finalized.job.status.value}"
+                )
+
             claimed = claim_next_job(
-                persistence=ProcessingJobPersistenceAdapter(session),
+                persistence=persistence,
                 req=ClaimNextJobCommand(
                     lease_owner=lease_owner,
                     max_attempts=settings.max_attempts,
@@ -51,48 +73,54 @@ def run() -> None:
         print(f"Claimed job: {job.id} by worker {lease_owner}")
 
         with contextmanager(get_session)() as session:
-            persistence = ProcessingJobPersistenceAdapter(session)
             extended = extend_lease(
-                persistence,
+                ProcessingJobPersistenceAdapter(session),
                 ExtendLeaseCommand(
                     job_id=job.id,
                     lease_owner=lease_owner,
                     lease_duration_minutes=settings.lease_duration_minutes,
                 ),
             )
-            if not extended:
-                print(f"Lost lease for job {job.id}; skipping")
+        if not extended:
+            print(f"Lost lease for job {job.id}; skipping")
+            time.sleep(settings.interval_seconds)
+            continue
+
+        try:
+            process_claimed_job(job)
+        except Exception as exc:
+            with contextmanager(get_session)() as session:
+                failure = handle_processing_failure(
+                    ProcessingJobPersistenceAdapter(session),
+                    HandleProcessingFailureCommand(
+                        job_id=job.id,
+                        lease_owner=lease_owner,
+                        attempts=job.attempts,
+                        max_attempts=settings.max_attempts,
+                        backoff_seconds=settings.retry_backoff_seconds,
+                        error_code=STUB_TRANSIENT_ERROR,
+                        error_message=str(exc)[:500],
+                    ),
+                )
+            if failure is None:
+                print(f"Could not record failure for job {job.id}")
             else:
-                try:
-                    process_claimed_job(job)
-                    completed = complete_job(
-                        persistence,
-                        CompleteJobCommand(job_id=job.id, lease_owner=lease_owner),
-                    )
-                    if completed is None:
-                        print(f"Could not complete job {job.id}")
-                    else:
-                        print(f"Completed job: {job.id}")
-                except Exception as exc:
-                    failure = handle_processing_failure(
-                        persistence,
-                        HandleProcessingFailureCommand(
-                            job_id=job.id,
-                            lease_owner=lease_owner,
-                            attempts=job.attempts,
-                            max_attempts=settings.max_attempts,
-                            backoff_seconds=settings.retry_backoff_seconds,
-                            error_code=STUB_TRANSIENT_ERROR,
-                            error_message=str(exc)[:500],
-                        ),
-                    )
-                    if failure is None:
-                        print(f"Could not record failure for job {job.id}")
-                    else:
-                        print(
-                            f"Job {job.id} outcome={failure.outcome.value} "
-                            f"status={failure.job.status.value}"
-                        )
+                print(
+                    f"Job {job.id} outcome={failure.outcome.value} "
+                    f"status={failure.job.status.value}"
+                )
+            time.sleep(settings.interval_seconds)
+            continue
+
+        with contextmanager(get_session)() as session:
+            completed = complete_job(
+                ProcessingJobPersistenceAdapter(session),
+                CompleteJobCommand(job_id=job.id, lease_owner=lease_owner),
+            )
+        if completed is None:
+            print(f"Could not complete job {job.id}")
+        else:
+            print(f"Completed job: {job.id}")
 
         time.sleep(settings.interval_seconds)
 
