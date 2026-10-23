@@ -440,3 +440,234 @@ def test_claim_next_job_requests_skip_locked_claim_query() -> None:
     session.flush.assert_called_once_with()
     session.commit.assert_not_called()
     session.rollback.assert_not_called()
+
+
+def _claim_pending_job(session: Session) -> int:
+    adapter = ProcessingJobPersistenceAdapter(session)
+    job_id = adapter.enqueue_new_job(DOCUMENT_ID)
+    claimed = adapter.claim_next_job(
+        LEASE_OWNER,
+        LEASE_EXPIRES_AT,
+        max_attempts=MAX_ATTEMPTS,
+        now=NOW,
+    )
+    assert claimed is not None
+    assert claimed.id == job_id
+    session.commit()
+    return job_id
+
+
+def _as_utc(value: datetime) -> datetime:
+    # SQLite drops tzinfo on persist/RETURNING; normalize for assertions.
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
+def test_extend_lease_updates_expiry_for_owner(session: Session) -> None:
+    job_id = _claim_pending_job(session)
+    adapter = ProcessingJobPersistenceAdapter(session)
+    new_expiry = NOW + timedelta(minutes=10)
+
+    assert adapter.extend_lease(job_id, LEASE_OWNER, new_expiry) is True
+
+    job = adapter.get_job_by_id(job_id)
+    assert job is not None
+    assert job.status is ProcessingJobState.PROCESSING
+    assert job.lease_owner == LEASE_OWNER
+    assert job.lease_expires_at is not None
+    assert _as_utc(job.lease_expires_at) == new_expiry
+
+
+def test_extend_lease_rejects_wrong_owner_or_non_processing(
+    session: Session,
+) -> None:
+    job_id = _claim_pending_job(session)
+    adapter = ProcessingJobPersistenceAdapter(session)
+    new_expiry = NOW + timedelta(minutes=10)
+
+    assert adapter.extend_lease(job_id, "other-worker", new_expiry) is False
+    assert adapter.complete_job(job_id, LEASE_OWNER, NOW) is not None
+    session.commit()
+    assert adapter.extend_lease(job_id, LEASE_OWNER, new_expiry) is False
+
+
+def test_complete_job_marks_succeeded_and_clears_lease(session: Session) -> None:
+    job_id = _claim_pending_job(session)
+    adapter = ProcessingJobPersistenceAdapter(session)
+
+    completed = adapter.complete_job(job_id, LEASE_OWNER, NOW)
+
+    assert completed is not None
+    assert completed.id == job_id
+    assert completed.status is ProcessingJobState.SUCCEEDED
+    assert completed.finished_at is not None
+    assert _as_utc(completed.finished_at) == NOW
+    assert completed.lease_owner is None
+    assert completed.lease_expires_at is None
+    assert completed.error_code is None
+    assert completed.error_message is None
+
+
+def test_complete_job_returns_none_for_wrong_owner(session: Session) -> None:
+    job_id = _claim_pending_job(session)
+    adapter = ProcessingJobPersistenceAdapter(session)
+
+    assert adapter.complete_job(job_id, "other-worker", NOW) is None
+    job = adapter.get_job_by_id(job_id)
+    assert job is not None
+    assert job.status is ProcessingJobState.PROCESSING
+    assert job.lease_owner == LEASE_OWNER
+
+
+def test_schedule_retry_keeps_processing_and_defers_lease(
+    session: Session,
+) -> None:
+    job_id = _claim_pending_job(session)
+    adapter = ProcessingJobPersistenceAdapter(session)
+    retry_at = NOW + timedelta(seconds=60)
+
+    retried = adapter.schedule_retry(
+        job_id,
+        LEASE_OWNER,
+        lease_expires_at=retry_at,
+        error_code=1000,
+        error_message="synthetic transient failure",
+    )
+
+    assert retried is not None
+    assert retried.status is ProcessingJobState.PROCESSING
+    assert retried.lease_owner == LEASE_OWNER
+    assert retried.lease_expires_at is not None
+    assert _as_utc(retried.lease_expires_at) == retry_at
+    assert retried.error_code == 1000
+    assert retried.error_message == "synthetic transient failure"
+    assert retried.finished_at is None
+
+
+def test_schedule_retry_blocks_claim_until_lease_expires(session: Session) -> None:
+    job_id = _claim_pending_job(session)
+    adapter = ProcessingJobPersistenceAdapter(session)
+    retry_at = NOW + timedelta(seconds=60)
+    assert (
+        adapter.schedule_retry(
+            job_id,
+            LEASE_OWNER,
+            lease_expires_at=retry_at,
+            error_code=1000,
+            error_message="synthetic transient failure",
+        )
+        is not None
+    )
+    session.commit()
+
+    assert (
+        adapter.claim_next_job(
+            "worker-2",
+            LEASE_EXPIRES_AT,
+            max_attempts=MAX_ATTEMPTS,
+            now=NOW + timedelta(seconds=30),
+        )
+        is None
+    )
+
+    reclaimed = adapter.claim_next_job(
+        "worker-2",
+        LEASE_EXPIRES_AT,
+        max_attempts=MAX_ATTEMPTS,
+        now=NOW + timedelta(seconds=61),
+    )
+    assert reclaimed is not None
+    assert reclaimed.id == job_id
+    assert reclaimed.attempts == 2
+    assert reclaimed.lease_owner == "worker-2"
+
+
+def test_fail_job_marks_failed_and_clears_lease(session: Session) -> None:
+    job_id = _claim_pending_job(session)
+    adapter = ProcessingJobPersistenceAdapter(session)
+
+    failed = adapter.fail_job(
+        job_id,
+        LEASE_OWNER,
+        error_code=1001,
+        error_message="synthetic permanent failure",
+        finished_at=NOW,
+    )
+
+    assert failed is not None
+    assert failed.status is ProcessingJobState.FAILED
+    assert failed.finished_at is not None
+    assert _as_utc(failed.finished_at) == NOW
+    assert failed.lease_owner is None
+    assert failed.lease_expires_at is None
+    assert failed.error_code == 1001
+    assert failed.error_message == "synthetic permanent failure"
+
+
+def test_fail_job_returns_none_for_wrong_owner(session: Session) -> None:
+    job_id = _claim_pending_job(session)
+    adapter = ProcessingJobPersistenceAdapter(session)
+
+    assert (
+        adapter.fail_job(
+            job_id,
+            "other-worker",
+            error_code=1001,
+            error_message="synthetic permanent failure",
+            finished_at=NOW,
+        )
+        is None
+    )
+    job = adapter.get_job_by_id(job_id)
+    assert job is not None
+    assert job.status is ProcessingJobState.PROCESSING
+
+
+def test_retry_then_fail_after_reclaim_reaches_terminal_state(
+    session: Session,
+) -> None:
+    job_id = _claim_pending_job(session)
+    adapter = ProcessingJobPersistenceAdapter(session)
+    assert (
+        adapter.schedule_retry(
+            job_id,
+            LEASE_OWNER,
+            lease_expires_at=NOW + timedelta(seconds=60),
+            error_code=1000,
+            error_message="synthetic transient failure",
+        )
+        is not None
+    )
+    session.commit()
+
+    reclaimed = adapter.claim_next_job(
+        "worker-2",
+        LEASE_EXPIRES_AT,
+        max_attempts=2,
+        now=NOW + timedelta(seconds=61),
+    )
+    assert reclaimed is not None
+    assert reclaimed.attempts == 2
+
+    failed = adapter.fail_job(
+        job_id,
+        "worker-2",
+        error_code=1001,
+        error_message="synthetic permanent failure",
+        finished_at=NOW + timedelta(seconds=61),
+    )
+    assert failed is not None
+    assert failed.status is ProcessingJobState.FAILED
+    assert failed.lease_owner is None
+    assert failed.lease_expires_at is None
+
+    assert (
+        adapter.claim_next_job(
+            "worker-3",
+            LEASE_EXPIRES_AT,
+            max_attempts=2,
+            now=NOW + timedelta(minutes=10),
+        )
+        is None
+    )

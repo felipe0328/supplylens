@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import Session
 
 from supplylens.domain.processing_job import ProcessingJobState
@@ -114,3 +114,99 @@ class ProcessingJobPersistenceAdapter(ProcessingJobPersistence):
         job.error_message = None
         self._session.flush()
         return map_model_processing_job_to_abstraction(job)
+
+    def extend_lease(
+        self, job_id: int, lease_owner: str, lease_expires_at: datetime
+    ) -> bool:
+        statement = (
+            update(ProcessingJobModel)
+            .where(
+                ProcessingJobModel.id == job_id,
+                ProcessingJobModel.lease_owner == lease_owner,
+                ProcessingJobModel.status == ProcessingJobState.PROCESSING,
+            )
+            .values(
+                lease_expires_at=lease_expires_at,
+            )
+        )
+        result = self._session.execute(statement)
+        return result.rowcount == 1
+
+    def complete_job(
+        self, job_id: int, lease_owner: str, finished_at: datetime
+    ) -> AbstractProcessingJob | None:
+        statement = (
+            update(ProcessingJobModel)
+            .where(
+                ProcessingJobModel.id == job_id,
+                ProcessingJobModel.lease_owner == lease_owner,
+                ProcessingJobModel.status == ProcessingJobState.PROCESSING,
+            )
+            .values(
+                finished_at=finished_at,
+                status=ProcessingJobState.SUCCEEDED,
+                error_code=None,
+                error_message=None,
+                lease_owner=None,
+                lease_expires_at=None,
+            )
+            .returning(ProcessingJobModel)
+        )
+        result = self._session.scalar(statement)
+        return map_model_processing_job_to_abstraction(result)
+
+    def schedule_retry(
+        self,
+        job_id: int,
+        lease_owner: str,
+        *,
+        lease_expires_at: datetime,
+        error_code: int,
+        error_message: str,
+    ) -> AbstractProcessingJob | None:
+        statement = (
+            update(ProcessingJobModel)
+            .where(
+                ProcessingJobModel.id == job_id,
+                ProcessingJobModel.lease_owner == lease_owner,
+                ProcessingJobModel.status == ProcessingJobState.PROCESSING,
+            )
+            .values(
+                lease_expires_at=lease_expires_at,
+                error_code=error_code,
+                error_message=error_message,
+                status=ProcessingJobState.PROCESSING,
+            )
+            .returning(ProcessingJobModel)
+        )
+        result = self._session.scalar(statement)
+        return map_model_processing_job_to_abstraction(result)
+
+    def fail_job(
+        self,
+        job_id: int,
+        lease_owner: str,
+        *,
+        error_code: int,
+        error_message: str,
+        finished_at: datetime,
+    ) -> AbstractProcessingJob | None:
+        statement = (
+            update(ProcessingJobModel)
+            .where(
+                ProcessingJobModel.id == job_id,
+                ProcessingJobModel.lease_owner == lease_owner,
+                ProcessingJobModel.status == ProcessingJobState.PROCESSING,
+            )
+            .values(
+                status=ProcessingJobState.FAILED,
+                finished_at=finished_at,
+                error_code=error_code,
+                error_message=error_message,
+                lease_owner=None,
+                lease_expires_at=None,
+            )
+            .returning(ProcessingJobModel)
+        )
+        result = self._session.scalar(statement)
+        return map_model_processing_job_to_abstraction(result)

@@ -35,3 +35,34 @@ class ProcessingJobPersistence(Protocol):
         max_attempts: int,
         now: datetime,
     ) -> ProcessingJob | None: ...
+
+    def extend_lease(
+        self, job_id: int, lease_owner: str, lease_expires_at: datetime
+    ) -> bool: ...
+
+    def complete_job(
+        self,
+        job_id: int,
+        lease_owner: str,
+        finished_at: datetime,
+    ) -> ProcessingJob | None: ...
+
+    def schedule_retry(
+        self,
+        job_id: int,
+        lease_owner: str,
+        *,
+        lease_expires_at: datetime,
+        error_code: int,
+        error_message: str,
+    ) -> ProcessingJob | None: ...
+
+    def fail_job(
+        self,
+        job_id: int,
+        lease_owner: str,
+        *,
+        error_code: int,
+        error_message: str,
+        finished_at: datetime,
+    ) -> ProcessingJob | None: ...
