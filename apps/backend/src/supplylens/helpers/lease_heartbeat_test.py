@@ -49,6 +49,20 @@ def test_run_with_lease_heartbeat_raises_when_renewal_fails() -> None:
         run_with_lease_heartbeat(work, renew, interval_seconds=0.1)
 
 
+def test_run_with_lease_heartbeat_raises_when_renewal_raises() -> None:
+    def renew() -> bool:
+        raise RuntimeError("db unavailable")
+
+    def work() -> None:
+        time.sleep(0.25)
+
+    with pytest.raises(LeaseLostError, match="Lost processing job lease") as exc_info:
+        run_with_lease_heartbeat(work, renew, interval_seconds=0.1)
+
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+    assert str(exc_info.value.__cause__) == "db unavailable"
+
+
 def test_run_with_lease_heartbeat_rejects_non_positive_interval() -> None:
     with pytest.raises(ValueError, match="positive"):
         run_with_lease_heartbeat(lambda: None, lambda: True, interval_seconds=0)

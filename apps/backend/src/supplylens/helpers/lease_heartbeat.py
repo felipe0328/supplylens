@@ -15,18 +15,26 @@ def run_with_lease_heartbeat(
     """Run work while renewing the lease on a background thread.
 
     ``renew_lease`` must open and commit its own short DB transaction. When it
-    returns False, work is allowed to finish, then ``LeaseLostError`` is raised
-    so the caller skips complete/fail ownership writes.
+    returns False or raises, work is allowed to finish, then ``LeaseLostError``
+    is raised so the caller skips complete/fail ownership writes.
     """
     if interval_seconds <= 0:
-        raise ValueError("interval_seconds must be a positive integer")
+        raise ValueError("interval_seconds must be positive")
 
     stop = Event()
     lost = Event()
+    renewal_error: BaseException | None = None
 
     def _heartbeat() -> None:
+        nonlocal renewal_error
         while not stop.wait(interval_seconds):
-            if not renew_lease():
+            try:
+                renewed = renew_lease()
+            except Exception as exc:
+                renewal_error = exc
+                lost.set()
+                return
+            if not renewed:
                 lost.set()
                 return
 
@@ -43,4 +51,4 @@ def run_with_lease_heartbeat(
         thread.join(timeout=max(1.0, float(interval_seconds)))
 
     if lost.is_set():
-        raise LeaseLostError("Lost processing job lease during work")
+        raise LeaseLostError("Lost processing job lease during work") from renewal_error

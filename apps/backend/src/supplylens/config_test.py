@@ -317,3 +317,24 @@ def test_worker_settings_reject_invalid_values(
 
     with pytest.raises(ValueError):
         WorkerSettings.from_env()
+
+
+def test_worker_settings_reject_heartbeat_not_shorter_than_lease(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for env_name in (
+        "WORKER_INTERVAL_SECONDS",
+        "WORKER_MAX_ATTEMPTS",
+        "WORKER_LEASE_DURATION_MINUTES",
+        "WORKER_RETRY_BACKOFF_SECONDS",
+        "WORKER_HEARTBEAT_INTERVAL_SECONDS",
+        "WORKER_ID",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+    monkeypatch.setenv("WORKER_LEASE_DURATION_MINUTES", "1")
+    monkeypatch.setenv("WORKER_HEARTBEAT_INTERVAL_SECONDS", "60")
+
+    with pytest.raises(
+        ValueError, match="WORKER_HEARTBEAT_INTERVAL_SECONDS must be less than"
+    ):
+        WorkerSettings.from_env()

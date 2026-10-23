@@ -211,6 +211,13 @@ class WorkerSettings:
                 self.heartbeat_interval_seconds, "WORKER_HEARTBEAT_INTERVAL_SECONDS"
             ),
         )
+        lease_duration_seconds = self.lease_duration_minutes * 60
+        if self.heartbeat_interval_seconds >= lease_duration_seconds:
+            raise ValueError(
+                "WORKER_HEARTBEAT_INTERVAL_SECONDS must be less than "
+                "WORKER_LEASE_DURATION_MINUTES in seconds "
+                f"({self.heartbeat_interval_seconds} >= {lease_duration_seconds})"
+            )
         if self.worker_id is not None:
             object.__setattr__(
                 self,
