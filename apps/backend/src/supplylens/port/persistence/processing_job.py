@@ -26,3 +26,53 @@ class ProcessingJobPersistence(Protocol):
 
     def get_job_by_id(self, id: int) -> ProcessingJob | None: ...
     def get_job_by_document_uuid(self, document_uuid: UUID) -> ProcessingJob | None: ...
+
+    def claim_next_job(
+        self,
+        lease_owner: str,
+        lease_expires_at: datetime,
+        *,
+        max_attempts: int,
+        now: datetime,
+    ) -> ProcessingJob | None: ...
+
+    def extend_lease(
+        self, job_id: int, lease_owner: str, lease_expires_at: datetime
+    ) -> bool: ...
+
+    def complete_job(
+        self,
+        job_id: int,
+        lease_owner: str,
+        finished_at: datetime,
+    ) -> ProcessingJob | None: ...
+
+    def schedule_retry(
+        self,
+        job_id: int,
+        lease_owner: str,
+        *,
+        lease_expires_at: datetime,
+        error_code: int,
+        error_message: str,
+    ) -> ProcessingJob | None: ...
+
+    def fail_job(
+        self,
+        job_id: int,
+        lease_owner: str,
+        *,
+        error_code: int,
+        error_message: str,
+        finished_at: datetime,
+    ) -> ProcessingJob | None: ...
+
+    def fail_expired_exhausted_job(
+        self,
+        *,
+        max_attempts: int,
+        now: datetime,
+        finished_at: datetime,
+        error_code: int,
+        error_message: str,
+    ) -> ProcessingJob | None: ...

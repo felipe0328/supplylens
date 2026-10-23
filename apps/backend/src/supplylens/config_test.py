@@ -6,6 +6,7 @@ from supplylens.config import (
     AppEnvironment,
     JWTSettings,
     StorageSettings,
+    WorkerSettings,
     get_app_environment,
     get_jwt_settings,
 )
@@ -249,3 +250,91 @@ def test_jwt_settings_constructor_rejects_a_short_secret() -> None:
             access_ttl_seconds=900,
             refresh_ttl_seconds=604800,
         )
+
+
+def test_worker_settings_load_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "WORKER_INTERVAL_SECONDS",
+        "WORKER_MAX_ATTEMPTS",
+        "WORKER_LEASE_DURATION_MINUTES",
+        "WORKER_RETRY_BACKOFF_SECONDS",
+        "WORKER_HEARTBEAT_INTERVAL_SECONDS",
+        "WORKER_ID",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    settings = WorkerSettings.from_env()
+
+    assert settings.interval_seconds == 5
+    assert settings.max_attempts == 3
+    assert settings.lease_duration_minutes == 5
+    assert settings.retry_backoff_seconds == 30
+    assert settings.heartbeat_interval_seconds == 60
+    assert settings.worker_id is None
+
+
+def test_worker_settings_parse_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WORKER_INTERVAL_SECONDS", "15")
+    monkeypatch.setenv("WORKER_MAX_ATTEMPTS", "7")
+    monkeypatch.setenv("WORKER_LEASE_DURATION_MINUTES", "10")
+    monkeypatch.setenv("WORKER_RETRY_BACKOFF_SECONDS", "45")
+    monkeypatch.setenv("WORKER_HEARTBEAT_INTERVAL_SECONDS", "20")
+    monkeypatch.setenv("WORKER_ID", "  local-worker-1  ")
+
+    settings = WorkerSettings.from_env()
+
+    assert settings.interval_seconds == 15
+    assert settings.max_attempts == 7
+    assert settings.lease_duration_minutes == 10
+    assert settings.retry_backoff_seconds == 45
+    assert settings.heartbeat_interval_seconds == 20
+    assert settings.worker_id == "local-worker-1"
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("WORKER_INTERVAL_SECONDS", "0"),
+        ("WORKER_MAX_ATTEMPTS", "-1"),
+        ("WORKER_LEASE_DURATION_MINUTES", "soon"),
+        ("WORKER_RETRY_BACKOFF_SECONDS", "0"),
+        ("WORKER_HEARTBEAT_INTERVAL_SECONDS", "0"),
+    ],
+)
+def test_worker_settings_reject_invalid_values(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    for env_name in (
+        "WORKER_INTERVAL_SECONDS",
+        "WORKER_MAX_ATTEMPTS",
+        "WORKER_LEASE_DURATION_MINUTES",
+        "WORKER_RETRY_BACKOFF_SECONDS",
+        "WORKER_HEARTBEAT_INTERVAL_SECONDS",
+        "WORKER_ID",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(ValueError):
+        WorkerSettings.from_env()
+
+
+def test_worker_settings_reject_heartbeat_not_shorter_than_lease(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for env_name in (
+        "WORKER_INTERVAL_SECONDS",
+        "WORKER_MAX_ATTEMPTS",
+        "WORKER_LEASE_DURATION_MINUTES",
+        "WORKER_RETRY_BACKOFF_SECONDS",
+        "WORKER_HEARTBEAT_INTERVAL_SECONDS",
+        "WORKER_ID",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+    monkeypatch.setenv("WORKER_LEASE_DURATION_MINUTES", "1")
+    monkeypatch.setenv("WORKER_HEARTBEAT_INTERVAL_SECONDS", "60")
+
+    with pytest.raises(
+        ValueError, match="WORKER_HEARTBEAT_INTERVAL_SECONDS must be less than"
+    ):
+        WorkerSettings.from_env()

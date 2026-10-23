@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help setup hooks hooks-uninstall fe fe-install fe-build fe-lint be be-install be-check be-lint be-test be-test-integration version-test check db-revision db-upgrade db-downgrade db-current db-history db-check create-admin docker-start docker-stop docker-status docker-logs docker-test-start docker-test-stop docker-test-storage-start docker-test-storage-stop pre-commit
+.PHONY: help setup hooks hooks-uninstall fe fe-install fe-build fe-lint be be-install be-check be-lint be-test be-test-integration version-test check db-revision db-upgrade db-downgrade db-current db-history db-check create-admin worker docker-start docker-stop docker-status docker-logs docker-test-start docker-test-stop docker-test-storage-start docker-test-storage-stop pre-commit
 
 help: ## Show available commands
 	@echo "SupplyLens development commands:"
@@ -9,6 +9,7 @@ help: ## Show available commands
 	@echo "  make hooks-uninstall ............. Remove the pre-push quality hook"
 	@echo "  make fe .......................... Run the React development server"
 	@echo "  make be .......................... Run the FastAPI development server"
+	@echo "  make worker ...................... Run the document processing worker"
 	@echo "  make be-check .................... Check backend Python syntax"
 	@echo "  make be-lint ..................... Run Ruff lint and formatting checks"
 	@echo "  make be-test ..................... Run backend tests that do not require PostgreSQL"
@@ -56,6 +57,9 @@ fe-lint: ## Lint the frontend
 
 be: ## Run the FastAPI development server with reload enabled
 	cd apps/backend && uv run uvicorn supplylens.api:app --reload
+
+worker: ## Run the document processing worker
+	uv run --project apps/backend python -m supplylens.worker
 
 be-install: ## Sync the locked Python environment
 	cd apps/backend && uv sync --locked
