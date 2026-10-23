@@ -258,6 +258,7 @@ def test_worker_settings_load_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
         "WORKER_MAX_ATTEMPTS",
         "WORKER_LEASE_DURATION_MINUTES",
         "WORKER_RETRY_BACKOFF_SECONDS",
+        "WORKER_HEARTBEAT_INTERVAL_SECONDS",
         "WORKER_ID",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -268,6 +269,7 @@ def test_worker_settings_load_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.max_attempts == 3
     assert settings.lease_duration_minutes == 5
     assert settings.retry_backoff_seconds == 30
+    assert settings.heartbeat_interval_seconds == 60
     assert settings.worker_id is None
 
 
@@ -276,6 +278,7 @@ def test_worker_settings_parse_overrides(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("WORKER_MAX_ATTEMPTS", "7")
     monkeypatch.setenv("WORKER_LEASE_DURATION_MINUTES", "10")
     monkeypatch.setenv("WORKER_RETRY_BACKOFF_SECONDS", "45")
+    monkeypatch.setenv("WORKER_HEARTBEAT_INTERVAL_SECONDS", "20")
     monkeypatch.setenv("WORKER_ID", "  local-worker-1  ")
 
     settings = WorkerSettings.from_env()
@@ -284,6 +287,7 @@ def test_worker_settings_parse_overrides(monkeypatch: pytest.MonkeyPatch) -> Non
     assert settings.max_attempts == 7
     assert settings.lease_duration_minutes == 10
     assert settings.retry_backoff_seconds == 45
+    assert settings.heartbeat_interval_seconds == 20
     assert settings.worker_id == "local-worker-1"
 
 
@@ -294,6 +298,7 @@ def test_worker_settings_parse_overrides(monkeypatch: pytest.MonkeyPatch) -> Non
         ("WORKER_MAX_ATTEMPTS", "-1"),
         ("WORKER_LEASE_DURATION_MINUTES", "soon"),
         ("WORKER_RETRY_BACKOFF_SECONDS", "0"),
+        ("WORKER_HEARTBEAT_INTERVAL_SECONDS", "0"),
     ],
 )
 def test_worker_settings_reject_invalid_values(
@@ -304,6 +309,7 @@ def test_worker_settings_reject_invalid_values(
         "WORKER_MAX_ATTEMPTS",
         "WORKER_LEASE_DURATION_MINUTES",
         "WORKER_RETRY_BACKOFF_SECONDS",
+        "WORKER_HEARTBEAT_INTERVAL_SECONDS",
         "WORKER_ID",
     ):
         monkeypatch.delenv(env_name, raising=False)

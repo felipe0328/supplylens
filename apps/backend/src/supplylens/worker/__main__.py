@@ -31,6 +31,7 @@ from supplylens.controllers.processing_jobs.handle_processing_failure import (
     handle_processing_failure,
 )
 from supplylens.database.database import get_session
+from supplylens.helpers.lease_heartbeat import LeaseLostError, run_with_lease_heartbeat
 from supplylens.worker.stub import process_claimed_job
 
 
@@ -86,8 +87,27 @@ def run() -> None:
             time.sleep(settings.interval_seconds)
             continue
 
+        def renew_lease() -> bool:
+            with contextmanager(get_session)() as session:
+                return extend_lease(
+                    ProcessingJobPersistenceAdapter(session),
+                    ExtendLeaseCommand(
+                        job_id=job.id,
+                        lease_owner=lease_owner,
+                        lease_duration_minutes=settings.lease_duration_minutes,
+                    ),
+                )
+
         try:
-            process_claimed_job(job)
+            run_with_lease_heartbeat(
+                lambda: process_claimed_job(job),
+                renew_lease,
+                interval_seconds=settings.heartbeat_interval_seconds,
+            )
+        except LeaseLostError:
+            print(f"Lost lease for job {job.id} during processing; skipping finish")
+            time.sleep(settings.interval_seconds)
+            continue
         except Exception as exc:
             with contextmanager(get_session)() as session:
                 failure = handle_processing_failure(
