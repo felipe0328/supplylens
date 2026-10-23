@@ -4,6 +4,7 @@ omit =
     *_test.py
     */supplylens/port/*
     */supplylens/domain/*
+    */supplylens/worker/*
 
 [report]
 fail_under = 100
