@@ -179,6 +179,7 @@ class WorkerSettings:
     interval_seconds: int
     max_attempts: int
     lease_duration_minutes: int
+    retry_backoff_seconds: int
     worker_id: str | None = None
 
     def __post_init__(self) -> None:
@@ -196,6 +197,11 @@ class WorkerSettings:
             self,
             "lease_duration_minutes",
             _positive_int(self.lease_duration_minutes, "WORKER_LEASE_DURATION_MINUTES"),
+        )
+        object.__setattr__(
+            self,
+            "retry_backoff_seconds",
+            _positive_int(self.retry_backoff_seconds, "WORKER_RETRY_BACKOFF_SECONDS"),
         )
         if self.worker_id is not None:
             object.__setattr__(
@@ -220,6 +226,10 @@ class WorkerSettings:
             lease_duration_minutes=_positive_int(
                 os.getenv("WORKER_LEASE_DURATION_MINUTES", "5"),
                 "WORKER_LEASE_DURATION_MINUTES",
+            ),
+            retry_backoff_seconds=_positive_int(
+                os.getenv("WORKER_RETRY_BACKOFF_SECONDS", "30"),
+                "WORKER_RETRY_BACKOFF_SECONDS",
             ),
             worker_id=trimmed_worker_id or None,
         )
