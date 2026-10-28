@@ -58,6 +58,7 @@ def test_migrations_upgrade_downgrade_and_reupgrade_clean_postgres(
     assert expected_head is not None
     expected_tables = {
         "alembic_version",
+        "document_extractions",
         "documents",
         "processing_jobs",
         "refresh_tokens",
@@ -83,6 +84,7 @@ def test_migrations_upgrade_downgrade_and_reupgrade_clean_postgres(
             enum["name"] for enum in inspect(engine).get_enums(schema="public")
         }
         assert "processingjobstate" not in remaining_enums
+        assert "documentextractionoutcome" not in remaining_enums
         assert "userrole" not in remaining_enums
         assert "userstatus" not in remaining_enums
 

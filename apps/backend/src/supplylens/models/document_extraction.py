@@ -19,8 +19,8 @@ class DocumentExtraction(Base):
     processing_job_id: Mapped[int] = mapped_column(
         ForeignKey("processing_jobs.id"), unique=True
     )
-    outcome: Mapped[DocumentExtractionOutcome]
-    extraction: Mapped[dict] = mapped_column(JSONB)
+    outcome: Mapped[DocumentExtractionOutcome] = mapped_column(nullable=False)
+    extraction: Mapped[dict] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
