@@ -16,7 +16,7 @@ from supplylens.controllers.processing_jobs.complete_job import (
 )
 from supplylens.controllers.processing_jobs.constants import (
     EXHAUSTED_LEASE_ERROR,
-    STUB_TRANSIENT_ERROR,
+    EXTRACTION_TRANSIENT_ERROR,
 )
 from supplylens.controllers.processing_jobs.extend_lease import (
     ExtendLeaseCommand,
@@ -32,7 +32,7 @@ from supplylens.controllers.processing_jobs.handle_processing_failure import (
 )
 from supplylens.database.database import get_session
 from supplylens.helpers.lease_heartbeat import LeaseLostError, run_with_lease_heartbeat
-from supplylens.worker.stub import process_claimed_job
+from supplylens.worker.process_job import process_claimed_job
 
 
 def run() -> None:
@@ -118,7 +118,7 @@ def run() -> None:
                         attempts=job.attempts,
                         max_attempts=settings.max_attempts,
                         backoff_seconds=settings.retry_backoff_seconds,
-                        error_code=STUB_TRANSIENT_ERROR,
+                        error_code=EXTRACTION_TRANSIENT_ERROR,
                         error_message=str(exc)[:500],
                     ),
                 )

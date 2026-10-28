@@ -1,7 +1,13 @@
 from supplylens.models.document import Document as ModelDocument
+from supplylens.models.document_extraction import (
+    DocumentExtraction as ModelDocumentExtraction,
+)
 from supplylens.models.processing_job import ProcessingJob as ModelProcessingJob
 from supplylens.models.refresh_token import RefreshToken as ModelRefreshToken
 from supplylens.models.user import User as ModelUser
+from supplylens.port.persistence.document_extraction import (
+    DocumentExtraction as AbstractDocumentExtraction,
+)
 from supplylens.port.persistence.documents import Document as AbstractDocument
 from supplylens.port.persistence.processing_job import (
     ProcessingJob as AbstractProcessingJob,
@@ -13,8 +19,10 @@ from supplylens.port.persistence.users import User as AbstractUser
 
 
 def map_model_document_to_abstraction(
-    model_document: ModelDocument,
-) -> AbstractDocument:
+    model_document: ModelDocument | None,
+) -> AbstractDocument | None:
+    if model_document is None:
+        return None
     return AbstractDocument(
         id=model_document.id,
         filename=model_document.filename,
@@ -82,4 +90,19 @@ def map_model_refresh_token_to_abstraction(
         expires_at=model_refresh_token.expires_at,
         revoked_at=model_refresh_token.revoked_at,
         replaced_by=model_refresh_token.replaced_by,
+    )
+
+
+def map_model_document_extraction_to_abstraction(
+    model_document_extraction: ModelDocumentExtraction | None,
+) -> AbstractDocumentExtraction | None:
+    if model_document_extraction is None:
+        return None
+    return AbstractDocumentExtraction(
+        id=model_document_extraction.id,
+        document_id=model_document_extraction.document_id,
+        processing_job_id=model_document_extraction.processing_job_id,
+        outcome=model_document_extraction.outcome,
+        extraction=model_document_extraction.extraction,
+        created_at=model_document_extraction.created_at,
     )

@@ -5,13 +5,19 @@ from uuid import UUID
 import pytest
 
 from supplylens.adapters.persistence.mappers import (
+    map_model_document_extraction_to_abstraction,
     map_model_document_to_abstraction,
     map_model_processing_job_to_abstraction,
 )
+from supplylens.domain.document_extraction import DocumentExtractionOutcome
 from supplylens.domain.documents import DocumentProcessingStatus, DocumentUploadStatus
 from supplylens.domain.processing_job import ProcessingJobState
 from supplylens.models.document import Document as ModelDocument
+from supplylens.models.document_extraction import (
+    DocumentExtraction as ModelDocumentExtraction,
+)
 from supplylens.models.processing_job import ProcessingJob as ModelProcessingJob
+from supplylens.port.persistence.document_extraction import DocumentExtraction
 from supplylens.port.persistence.documents import Document
 from supplylens.port.persistence.processing_job import ProcessingJob
 
@@ -95,3 +101,38 @@ def test_processing_job_mapper_preserves_all_fields(
         mapped.attempts = 99
     model.attempts = 4
     assert mapped.attempts == 3
+
+
+def test_document_extraction_mapper_returns_none_for_missing_model() -> None:
+    assert map_model_document_extraction_to_abstraction(None) is None
+
+
+@pytest.mark.parametrize("outcome", list(DocumentExtractionOutcome))
+def test_document_extraction_mapper_preserves_all_fields(
+    outcome: DocumentExtractionOutcome,
+) -> None:
+    expected = DocumentExtraction(
+        id=DOCUMENT_ID,
+        document_id=DOCUMENT_ID,
+        processing_job_id=7,
+        outcome=outcome,
+        extraction={"pages": [{"page_number": 1, "text": "synthetic"}]},
+        created_at=CREATED_AT,
+    )
+    model = ModelDocumentExtraction(
+        id=expected.id,
+        document_id=expected.document_id,
+        processing_job_id=expected.processing_job_id,
+        outcome=expected.outcome,
+        extraction=expected.extraction,
+        created_at=expected.created_at,
+    )
+
+    mapped = map_model_document_extraction_to_abstraction(model)
+
+    assert mapped == expected
+    assert isinstance(mapped, DocumentExtraction)
+    with pytest.raises(FrozenInstanceError):
+        mapped.extraction = {}
+    model.extraction = {"changed": True}
+    assert mapped.extraction == {"pages": [{"page_number": 1, "text": "synthetic"}]}
