@@ -129,3 +129,13 @@ def test_extract_fixture_digital_invoice_has_text_and_tables() -> None:
         for row in table
         for cell in row
     )
+
+
+def test_extract_fixture_image_only_is_unsupported() -> None:
+    pdf_path = FIXTURES_PDF_DIR / "15_image_only_no_text.pdf"
+    assert pdf_path.is_file()
+
+    result = PdfplumberExtractor().extract(pdf_path.read_bytes())
+
+    assert result.outcome is DocumentExtractionOutcome.UNSUPPORTED_IMAGEN_ONLY
+    assert result.extraction["reason"] == "no_selectable_text"

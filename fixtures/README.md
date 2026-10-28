@@ -20,6 +20,7 @@ The machine-readable expectations are in [`expected.json`](expected.json). Money
 | `12_spanish_eur_missing_weight.pdf` | Spanish headings, EUR, printed decimal comma, no weight. Keep currency distinct from USD and leave weight unknown. |
 | `13_ambiguous_currency.pdf` | No currency printed. Never guess USD or COP from the numeric amounts. |
 | `14_incorrect_line_and_document_total.pdf` | Deliberately wrong: 3 × 12.00 is 36.00, but line says 35.00; displayed total 40.00 has no supporting charge. Flag both mismatches without silently changing the PDF values. |
+| `15_image_only_no_text.pdf` | Synthetic page with no selectable text. Automatic extraction must return an explicit unsupported outcome and leave the original object unchanged. |
 
 Related groups in `expected.json` identify 03–04 and 05–06. Do not merge documents by filename or similar-looking totals alone. Reuploading the **same file** is the exact hash duplicate test; it does not need a second copy in the repository.
 
