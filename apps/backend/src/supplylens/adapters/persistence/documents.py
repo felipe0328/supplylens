@@ -47,9 +47,7 @@ class DocumentPersistenceAdapter(DocumentPersistence):
                 DocumentModel.deleted_at.is_(None),
             )
         )
-        if document is not None:
-            return map_model_document_to_abstraction(document)
-        return None
+        return map_model_document_to_abstraction(document)
 
     def update_document_upload_status(
         self, id: UUID, new_status: DocumentUploadStatus
